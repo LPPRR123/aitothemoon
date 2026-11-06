@@ -1,0 +1,10 @@
+[
+ {"tool": "world_create", "args": {"name": "void_scar", "size": 384, "seed": 111}},
+ {"tool": "generate", "args": {"pattern": "50%blackstone,30%deepslate,20%obsidian", "expression": "y <= 64 + 6*fbm(x,z,40) + 4*ridged(x,z,25)"}},
+ {"tool": "feature", "args": {"type": "fissure", "points": "-170,40 → -60,10 → 20,30 → 170,-20", "width": 9, "depth": 8, "glow": "60%pearlescent_froglight,40%crying_obsidian", "wall_glow": 0.0, "fill_to": 1, "cover": "60%purple_stained_glass,40%magenta_stained_glass"}},
+ {"tool": "feature", "args": {"type": "fissure", "points": "-40,90 → 30,-60 → 60,-170", "width": 6, "depth": 6, "glow": "60%pearlescent_froglight,40%crying_obsidian", "wall_glow": 0.0, "seed": 3, "fill_to": 1, "cover": "purple_stained_glass"}},
+ {"tool": "feature", "args": {"type": "spire", "area": "circle:0,-60,170", "count": 9, "spacing": 32, "radius": 6, "height": 60, "taper": 0.7, "roughness": 0.5, "rock": "50%blackstone,30%obsidian,20%deepslate", "moss_chance": 0, "top": "crying_obsidian", "soil": "obsidian", "ledges": 0, "jitter": 0.5}},
+ {"tool": "feature", "args": {"type": "floating_island", "points": "40,130,-70 → -80,118,-110 → 110,112,-140 → -20,140,-170", "scale": 0.55, "top": "blackstone", "soil": "obsidian", "rock": "60%deepslate,40%obsidian", "hang": "crying_obsidian", "waterfalls": 0}},
+ {"tool": "structure", "args": {"type": "gate", "at": "10,-20", "size": 9, "material": "obsidian"}},
+ {"tool": "view", "args": {"camera": "0,85,110", "look_at": "0,80,-60", "fov": 80, "time": "night", "sky": "#4a1a7a", "fog": 0.3, "bloom": 1.1, "ambient": 2.0, "width": 760, "height": 388}}
+]

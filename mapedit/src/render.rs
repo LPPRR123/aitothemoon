@@ -351,7 +351,8 @@ pub fn render_view(w: &World, cam: P3, yaw_deg: f64, pitch_deg: f64, o: &ViewOpt
 }
 
 /// Resolve a camera from tool args. Returns (cam, yaw, pitch, description).
-pub fn camera_from_args(w: &World, a: &serde_json::Value) -> Result<(P3, f64, f64, String)> {
+/// Returns (camera, yaw, pitch, description, distance to target).
+pub fn camera_from_args(w: &World, a: &serde_json::Value) -> Result<(P3, f64, f64, String, f64)> {
     let infos = blocks::infos();
     let (bx0, bz0, bx1, bz1) = w.bounds();
     let (cxm, czm) = ((bx0 + bx1) as f64 / 2.0, (bz0 + bz1) as f64 / 2.0);
@@ -381,5 +382,6 @@ pub fn camera_from_args(w: &World, a: &serde_json::Value) -> Result<(P3, f64, f6
         Some(v) if v.is_number() => v.as_f64().unwrap(),
         _ => (dy / (dx * dx + dz * dz).sqrt().max(1.0)).atan().to_degrees(),
     };
-    Ok((cam, yaw, pitch, format!("camera {:.0},{:.0},{:.0} yaw {:.0}° pitch {:.0}°", cam.x, cam.y, cam.z, yaw, pitch)))
+    let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+    Ok((cam, yaw, pitch, format!("camera {:.0},{:.0},{:.0} yaw {:.0}° pitch {:.0}°", cam.x, cam.y, cam.z, yaw, pitch), dist))
 }

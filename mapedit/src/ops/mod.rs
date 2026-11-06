@@ -1,5 +1,6 @@
 //! Edit operations. Each returns a short human/LLM-readable summary.
 
+pub mod fantasy;
 pub mod nature;
 pub mod structures;
 pub mod terrain;

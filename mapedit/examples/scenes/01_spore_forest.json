@@ -1,0 +1,12 @@
+[
+ {"tool": "world_create", "args": {"name": "spore_forest", "size": 384, "seed": 11}},
+ {"tool": "generate", "args": {"pattern": "stone", "expression": "y <= 64 + 5*fbm(x,z,60)"}},
+ {"tool": "paint", "args": {"rules": [{"pattern": "45%moss_block,35%mycelium,20%podzol", "depth": 2}]}},
+ {"tool": "feature", "args": {"type": "giant_mushroom", "at": "30,-40", "height": 52, "cap_radius": 26, "seed": 3, "cap": "60%light_blue_stained_glass,40%blue_stained_glass", "cap_core": "sea_lantern", "gills": "light_blue_stained_glass", "stem": "70%mushroom_stem,30%pearlescent_froglight", "hang_block": "60%light_blue_stained_glass,40%sea_lantern", "spot_chance": 0.06}},
+ {"tool": "feature", "args": {"type": "giant_mushroom", "at": "-55,-20", "height": 34, "cap_radius": 17, "seed": 4, "cap": "80%purple_stained_glass,20%magenta_stained_glass", "cap_core": "60%pearlescent_froglight,40%sea_lantern", "gills": "magenta_stained_glass", "stem": "70%mushroom_stem,30%pearlescent_froglight", "spot_chance": 0.06}},
+ {"tool": "feature", "args": {"type": "giant_mushroom", "area": "circle:0,-60,150", "count": 7, "spacing": 44, "scale": 0.8, "jitter": 0.4, "seed": 5, "cap": "80%purple_stained_glass,20%magenta_stained_glass", "cap_core": "60%pearlescent_froglight,40%sea_lantern", "gills": "magenta_stained_glass", "stem": "70%mushroom_stem,30%pearlescent_froglight", "spot_chance": 0.06}},
+ {"tool": "feature", "args": {"type": "giant_mushroom", "area": "circle:0,-60,150", "count": 5, "spacing": 44, "scale": 0.7, "seed": 9, "cap": "60%light_blue_stained_glass,40%blue_stained_glass", "cap_core": "sea_lantern", "gills": "light_blue_stained_glass", "stem": "70%mushroom_stem,30%pearlescent_froglight", "hang_block": "60%light_blue_stained_glass,40%sea_lantern", "spot_chance": 0.06}},
+ {"tool": "feature", "args": {"type": "giant_mushroom", "area": "circle:0,0,150", "count": 45, "spacing": 9, "scale": 0.25, "jitter": 0.4, "seed": 21, "hang": 0, "lights": "none", "cap": "60%light_blue_stained_glass,40%blue_stained_glass", "cap_core": "sea_lantern", "gills": "light_blue_stained_glass", "stem": "70%mushroom_stem,30%pearlescent_froglight", "hang_block": "60%light_blue_stained_glass,40%sea_lantern", "spot_chance": 0.06}},
+ {"tool": "flora", "args": {"plants": "45%warped_roots,30%crimson_roots,20%nether_sprouts,5%amethyst_cluster", "density": 0.2}},
+ {"tool": "view", "args": {"camera": "-20,72,100", "look_at": "5,90,-40", "width": 760, "height": 388, "fov": 74, "time": "night", "sky": "#3a2470", "fog": 0.35, "bloom": 0.9}}
+]

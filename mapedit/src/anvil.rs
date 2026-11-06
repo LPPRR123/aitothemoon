@@ -259,6 +259,10 @@ pub struct ExportOpts {
     pub data_version: i32,
     pub version_name: String,
     pub spawn: (i32, i32, i32),
+    /// Day time ticks (6000 = noon, 13000 = dusk, 18000 = midnight).
+    pub day_time: i64,
+    /// false = freeze the time of day (eternal night etc.).
+    pub daylight_cycle: bool,
 }
 
 /// Write level.dat (void flat generator outside the edited area).
@@ -292,8 +296,8 @@ pub fn write_level_dat(save: &Path, o: &ExportOpts, custom_dims: &[String]) -> R
         ("allowCommands", Nbt::Byte(1)),
         ("initialized", Nbt::Byte(1)),
         ("LastPlayed", Nbt::Long(now)),
-        ("Time", Nbt::Long(6000)),
-        ("DayTime", Nbt::Long(6000)),
+        ("Time", Nbt::Long(o.day_time)),
+        ("DayTime", Nbt::Long(o.day_time)),
         ("SpawnX", Nbt::Int(o.spawn.0)),
         ("SpawnY", Nbt::Int(o.spawn.1)),
         ("SpawnZ", Nbt::Int(o.spawn.2)),
@@ -305,7 +309,11 @@ pub fn write_level_dat(save: &Path, o: &ExportOpts, custom_dims: &[String]) -> R
         ("DataPacks", c(vec![("Enabled", Nbt::List(packs)), ("Disabled", Nbt::List(vec![]))])),
         (
             "GameRules",
-            c(vec![("doDaylightCycle", Nbt::String("true".into())), ("doMobSpawning", Nbt::String("true".into())), ("doFireTick", Nbt::String("false".into()))]),
+            c(vec![
+                ("doDaylightCycle", Nbt::String(if o.daylight_cycle { "true" } else { "false" }.into())),
+                ("doMobSpawning", Nbt::String("true".into())),
+                ("doFireTick", Nbt::String("false".into())),
+            ]),
         ),
         (
             "WorldGenSettings",
@@ -575,7 +583,7 @@ mod tests {
         let (n, r, _) = write_regions(&w, &dimension_dir(&dir, "overworld"), dv, &|_, _| {}).unwrap();
         assert_eq!(n, 16);
         assert_eq!(r, 4); // chunks -2..1 span regions -1 and 0 on each axis
-        write_level_dat(&dir, &ExportOpts { level_name: "T".into(), data_version: dv, version_name: "1.21.4".into(), spawn: (0, 80, 0) }, &[]).unwrap();
+        write_level_dat(&dir, &ExportOpts { level_name: "T".into(), data_version: dv, version_name: "1.21.4".into(), spawn: (0, 80, 0), day_time: 18000, daylight_cycle: false }, &[]).unwrap();
         assert_eq!(read_level_name(&dir).as_deref(), Some("T"));
         let w2 = import(&dir, "overworld", "t2", None).unwrap();
         assert_eq!(w2.bounds(), w.bounds());

@@ -8,6 +8,7 @@ mod mcp;
 mod mesh;
 mod noise;
 mod ops;
+mod raytrace;
 mod render;
 mod server;
 mod spec;

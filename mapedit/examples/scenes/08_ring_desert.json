@@ -1,0 +1,16 @@
+[
+ {"tool": "world_create", "args": {"name": "ring_desert", "size": 512, "seed": 88}},
+ {"tool": "generate", "args": {"pattern": "sandstone", "expression": "y <= 64 + 4*fbm(x,z,60) + 3*sin(x/13 + 2*fbm(x,z,90))"}},
+ {"tool": "paint", "args": {"rules": [{"pattern": "sand", "depth": 3}]}},
+ {"tool": "ridge", "args": {"points": "-260,120,-230 → -140,140,-250 → 0,115,-250 → 130,135,-245 → 250,118,-230", "radius": 55, "noisiness": 0.8, "material": "45%terracotta,30%orange_terracotta,25%red_sandstone"}},
+ {"tool": "structure", "args": {"type": "tower", "points": "55,95 → 72,88", "size": 26, "material": "cut_sandstone"}},
+ {"tool": "structure", "args": {"type": "tower", "at": "-75,70", "size": 14, "material": "smooth_sandstone"}},
+ {"tool": "structure", "args": {"type": "gate", "points": "-55,75 → -20,40", "size": 11, "material": "chiseled_sandstone"}},
+ {"tool": "structure", "args": {"type": "ruin", "points": "-40,95 → 30,110 → 90,70 → -90,40 → 0,60", "size": 15, "rotate": "random"}},
+ {"tool": "replace", "args": {"from": "stone_bricks,mossy_stone_bricks,cracked_stone_bricks,cobblestone,mossy_cobblestone,spruce_planks,lantern", "pattern": "60%cut_sandstone,40%smooth_sandstone"}},
+ {"tool": "feature", "args": {"type": "ring", "at": "-15,150,-40", "radius": 44, "thickness": 7, "tilt": 55, "azimuth": 175, "broken": 0.15}},
+ {"tool": "feature", "args": {"type": "ring", "at": "-150,165,-90", "radius": 18, "thickness": 4, "tilt": 50, "azimuth": 150}},
+ {"tool": "feature", "args": {"type": "ring", "at": "125,168,-90", "radius": 24, "thickness": 4, "tilt": 58, "azimuth": 205}},
+ {"tool": "feature", "args": {"type": "ring", "at": "60,125,-10", "radius": 16, "thickness": 3, "tilt": 45, "azimuth": 185}},
+ {"tool": "view", "args": {"camera": "10,76,160", "look_at": "-10,118,-40", "width": 760, "height": 376, "fov": 82, "time": "dusk", "sky": "#8f9ae0", "fog": 0.08, "sun_azimuth": 110, "sun_elevation": 20}}
+]

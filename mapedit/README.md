@@ -43,7 +43,7 @@ HTTP 方式：先运行 `mapedit serve`，再把客户端指向 `http://localhos
 
 ## 功能
 
-### 48 个 MCP 工具
+### 49 个 MCP 工具
 
 | 类别 | 工具 |
 |---|---|
@@ -53,12 +53,13 @@ HTTP 方式：先运行 `mapedit serve`，再把客户端指向 `http://localhos
 | Axiom 式笔刷 | `ridge`（山脊）`raise` `smooth` `flatten` `roughen` `terrace` `pit`（露天矿坑）`carve`（峡谷）`paint`（按高度/坡度/噪声规则上色）`overlay` |
 | 水与路 | `river`（水位单调下降）`fill`（连通洪泛填海）`road`（坡度限制，过水自动架桥，`route:true` 用 A* 自动绕开陡坡） |
 | 植被 | `forest`（17 种程序化树，成簇分布）`tree` `flora` |
+| **奇幻生成器** | `feature`：巨型蘑菇、浮空岛、天柱、水晶簇、巨树（8 种风格）、浮空岩环、肋骨架、头骨、拱桥/巨根、吊桥、发光裂隙；可单点放置，也可按数量在区域里随机撒 |
 | 结构 | `structure`（9 种程序化地标）`schem_load` `schem_save` `schem_list` `copy` `paste`（Sponge .schem v2/v3，带方块朝向的旋转） |
-| **让 AI 看见** | `map`（俯视晕渲图，带区域边界和 ID 标注）`view`（3D 透视图）`probe` `stats` |
+| **让 AI 看见** | `map`（俯视晕渲图，带区域边界和 ID 标注）`view`（体素光线追踪：悬空结构、玻璃、发光方块、Minecraft 规则的方块光传播、阴影、白天/黄昏/夜晚、天色、泛光）`probe` `stats` |
 | 流程 | `history` `undo` `redo` `batch` `help` |
-| 存档 | `export`（Anvil `.mca` + `level.dat`，多维度）`import`（读入已有 1.18+ 存档继续编辑） |
+| 存档 | `export`（Anvil `.mca` + `level.dat`，多维度，`time:"night"` 可固定为永夜）`import`（读入已有 1.18+ 存档继续编辑） |
 
-完整清单运行 `mapedit tools` 查看。参数语法会在 MCP 初始化时通过 `instructions` 字段发给模型，模型也可以调用 `help` 工具查询。
+完整清单运行 `mapedit tools` 查看（共 49 个）。参数语法会在 MCP 初始化时通过 `instructions` 字段发给模型，模型也可以调用 `help` 工具查询。
 
 ### 给 AI 用的参数语法
 
@@ -73,6 +74,30 @@ HTTP 方式：先运行 `mapedit serve`，再把客户端指向 `http://localhos
 ```
 
 `y <= f(x,z)` 这种形式的表达式会被识别成「按列填充」，2400×2400 的地形底子几秒就能生成。
+
+## 从概念图到场景
+
+`examples/scenes/` 下有 12 个脚本，把一组奇幻概念图（星孢森林、倒悬天境、琉璃幻林、永夜银森、天柱遗境、晶脉裂谷、世界树根域、浮环沙海、血月腐林、巨骸荒原、虚空蚀地、幽魂沼泽）复刻成了 Minecraft 场景。每个脚本 8–17 次调用，1–4 秒跑完。下图左边是参考图，右边是 `view` 从近似机位渲染的结果：
+
+![概念图对比](docs/screenshots/concept-art-comparison.jpg)
+
+AI 的工作流程（已经写进 MCP 的 `instructions`）：
+
+1. **拆解图片**：地形底子 → 主体奇观（`feature`）→ 批量点缀（`forest`、`flora`、`feature count=N`）→ 建筑 → 氛围（时间、天色、发光）。
+2. **用同机位渲染对比**：`view` 设好 `camera` / `look_at` / `fov` / `time` / `sky` / `sun_azimuth` / `ambient`，和参考图并排比较。
+3. **按「构图和比例 → 轮廓 → 颜色和光」的顺序修正最大的差距**，再渲染，重复。
+
+发光效果用的都是游戏里真实可用的做法：发光方块（海晶灯、蛙明灯、菌光体、哭泣的黑曜石），染色玻璃盖在发光层上（发光的菌盖、紫色熔流），以及不可见的 `light` 方块（生成器会自动布置，夜里在游戏中也会亮）。渲染器按 Minecraft 的规则计算方块光传播，所以预览里看到的亮暗和游戏里基本一致。
+
+生成器一览（`help topic=features` 可以查看全部参数）：
+
+![生成器](docs/screenshots/feature-gallery.jpg)
+
+```bash
+./target/release/mapedit run examples/scenes/04_silver_night.json --serve   # 任选一个场景
+```
+
+已知差距：参考图是 AI 生成的写实风格渲染，带体积光、倒影和景深，这些在方块世界里无法一比一还原；`view` 也不会渲染倒影，并且用的是纯色而不是方块贴图。另外，自定义群系（用来改天空和雾的颜色，比如真正的血红天空）的数据包格式我没能核实，所以还没有做；目前天色只在 `view` 预览里生效，游戏里需要配合资源包或光影。
 
 ## 比原版多了什么
 
@@ -120,12 +145,13 @@ src/
   expr.rs     表达式解析和求值，按列形式识别
   spec.rs     点 / 路径 / 区域 / 方块模式 / 掩码的解析
   noise.rs    Perlin、fBm、ridged、Worley、RNG
-  ops/        terrain.rs  water.rs  nature.rs  structures.rs  mod.rs（形状、generate、高度图读写）
+  ops/        terrain.rs  water.rs  nature.rs  structures.rs  fantasy.rs（奇幻生成器）  mod.rs（形状、generate、高度图读写）
   anvil.rs    .mca / level.dat 导出导入，自定义维度数据包
-  render.rs   给 AI 的 PNG：晕渲俯视图 + 体素空间透视图
+  render.rs   给 AI 的 PNG：晕渲俯视图（+ 旧的高度场透视图）
+  raytrace.rs 体素光线追踪：DDA、空区段跳过、半透明、块光泛洪、阴影、泛光
   mesh.rs     预览用的二进制区块网格和概览网格
   editor.rs   多世界会话、历史、事件
-  tools.rs    48 个工具的 schema 和实现，以及给模型的 instructions
+  tools.rs    49 个工具的 schema 和实现，以及给模型的 instructions
   mcp.rs      JSON-RPC MCP（stdio + HTTP 共用）
   server.rs   axum：预览页面、/api/*、/ws、/mcp
 web/          index.html + app.js（three.js 0.170 已内嵌在 web/vendor）
@@ -139,12 +165,15 @@ web/          index.html + app.js（three.js 0.170 已内嵌在 web/vendor）
 cargo test --release
 ```
 
-共 13 个测试，包括一个端到端测试：在小世界上依次调用每个编辑工具，验证撤销/重做、批处理、失败回滚，以及导出→导入后方块逐一对比。
+共 14 个测试，包括一个端到端测试：在小世界上依次调用每个编辑工具和全部 11 种奇幻生成器，渲染夜景，验证撤销/重做、批处理、失败回滚，以及导出→导入后方块逐一对比。
 
 ## 后续可以做
 
 - 在游戏里实时同步（Fabric 模组通过 WebSocket 接收脏区块）
-- 脚本工具（在沙箱里执行 Rhai/JS），把 48 个原子工具组合成任意操作
+- 脚本工具（在沙箱里执行 Rhai/JS），把 49 个原子工具组合成任意操作
 - 水力侵蚀模拟，以及更多程序化建筑（波函数坍缩生成村庄/城堡）
-- 预览改用 Minecraft 贴图（运行时从用户本机的游戏 jar 读取），加贪心网格合并
+- 预览和 `view` 改用 Minecraft 贴图（运行时从用户本机的游戏 jar 读取），加贪心网格合并；`view` 增加水面倒影
+- 核实格式后，导出自定义群系数据包（天空、雾、水的颜色，粒子效果）
+- 更多建筑生成器：哥特尖塔神殿、高脚屋、沙漠遗迹群
+- 从参考图自动提取主色调并匹配方块调色板
 - 方块实体（箱子、告示牌）和自定义群系的数据包

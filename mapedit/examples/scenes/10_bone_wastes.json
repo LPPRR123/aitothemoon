@@ -1,0 +1,13 @@
+[
+ {"tool": "world_create", "args": {"name": "bone_wastes", "size": 448, "seed": 10}},
+ {"tool": "generate", "args": {"pattern": "sandstone", "expression": "y <= 64 + 9*fbm(x,z,45) + 5*ridged(x,z,30)"}},
+ {"tool": "terrace", "args": {"step": 3, "strength": 0.95}},
+ {"tool": "paint", "args": {"rules": [{"pattern": "55%smooth_sandstone,25%calcite,20%sandstone", "min_slope": 1, "depth": 3}, {"pattern": "50%sand,30%smooth_sandstone,20%calcite", "depth": 2}]}},
+ {"tool": "feature", "args": {"type": "ribcage", "at": "-30,-40", "length": 130, "height": 44, "width": 44, "ribs": 7, "azimuth": 20, "thickness": 2.4}},
+ {"tool": "feature", "args": {"type": "skull", "at": "42,0", "size": 22, "azimuth": 215, "sink": 4}},
+ {"tool": "structure", "args": {"type": "ruin", "points": "85,-10 → 105,-40 → 70,-70 → 40,40", "size": 15, "rotate": "random"}},
+ {"tool": "structure", "args": {"type": "tower", "points": "95,-75 → 120,-30", "size": 22}},
+ {"tool": "replace", "args": {"from": "stone_bricks,cobblestone,spruce_planks", "pattern": "70%sandstone,30%cut_sandstone", "area": "rect:30,-100,140,60"}},
+ {"tool": "feature", "args": {"type": "ribcage", "at": "-140,-130", "length": 45, "height": 16, "width": 18, "ribs": 6, "azimuth": 20, "sink": 3}},
+ {"tool": "view", "args": {"camera": "-30,84,85", "look_at": "5,88,-40", "width": 760, "height": 388, "fov": 80, "fog": 0.1, "sun_azimuth": 120, "sun_elevation": 40}}
+]

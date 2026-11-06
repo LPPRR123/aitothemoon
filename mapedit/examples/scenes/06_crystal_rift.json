@@ -1,0 +1,10 @@
+[
+ {"tool": "world_create", "args": {"name": "crystal_rift", "size": 384, "seed": 66}},
+ {"tool": "generate", "args": {"pattern": "45%deepslate,25%blackstone,15%tuff,15%purple_terracotta", "expression": "y <= 125 + 12*fbm(x,z,50)"}},
+ {"tool": "carve", "args": {"points": "0,126,-190 → 12,126,-60 → -12,126,60 → 0,126,190", "width": 30, "depth": 80, "wall_slope": 1.6, "roughness": 0.55, "material": "deepslate"}},
+ {"tool": "terrace", "args": {"area": "rect:-80,-190,80,190", "step": 9, "strength": 0.9}},
+ {"tool": "feature", "args": {"type": "fissure", "points": "0,-190 → 12,-60 → -12,60 → 0,190", "width": 4, "depth": 3, "glow": "60%sea_lantern,40%light_blue_stained_glass", "wall_glow": 0.0}},
+ {"tool": "feature", "args": {"type": "crystal", "area": "rect:-75,-190,75,190", "count": 18, "spacing": 22, "scale": 1.5, "jitter": 0.35, "seed": 3, "cluster": 4, "shell": "60%light_blue_stained_glass,40%blue_stained_glass", "core": "70%light_blue_stained_glass,30%sea_lantern"}},
+ {"tool": "feature", "args": {"type": "crystal", "area": "rect:-75,-190,75,190", "count": 6, "spacing": 26, "scale": 1.0, "seed": 8, "shell": "70%purple_stained_glass,30%magenta_stained_glass", "core": "amethyst_block", "base": "crying_obsidian"}},
+ {"tool": "view", "args": {"camera": "0,95,165", "look_at": "0,72,0", "width": 760, "height": 388, "fov": 75, "time": "night", "sky": "#2a4aa0", "fog": 0.25, "bloom": 0.8, "ambient": 3.5}}
+]

@@ -1,0 +1,10 @@
+[
+ {"tool": "world_create", "args": {"name": "blood_moon", "size": 384, "seed": 99}},
+ {"tool": "generate", "args": {"pattern": "stone", "expression": "y <= 64 + 4*fbm(x,z,50)"}},
+ {"tool": "paint", "args": {"rules": [{"pattern": "magma_block", "coverage": 0.08, "scale": 5}, {"pattern": "45%podzol,30%crimson_nylium,25%coarse_dirt"}]}},
+ {"tool": "feature", "args": {"type": "giant_tree", "area": "circle:0,0,170", "count": 12, "spacing": 38, "style": "blood", "scale": 0.75, "jitter": 0.35, "seed": 9}},
+ {"tool": "feature", "args": {"type": "giant_mushroom", "area": "circle:0,0,150", "count": 30, "spacing": 10, "scale": 0.18, "jitter": 0.4, "seed": 3, "cap": "red_stained_glass", "cap_core": "shroomlight", "gills": "red_stained_glass", "stem": "crimson_hyphae", "hang": 0, "lights": "none"}},
+ {"tool": "structure", "args": {"type": "gate", "at": "0,-60", "size": 9, "material": "red_nether_bricks"}},
+ {"tool": "flora", "args": {"plants": "50%crimson_roots,30%crimson_fungus,20%dead_bush", "density": 0.3}},
+ {"tool": "view", "args": {"camera": "0,75,85", "look_at": "0,82,-60", "fov": 78, "time": "night", "sky": "#8a1414", "fog": 0.35, "bloom": 1.0, "ambient": 1.8, "sun_azimuth": 18, "sun_elevation": 13, "width": 760, "height": 388}}
+]

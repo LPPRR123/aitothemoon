@@ -1,0 +1,11 @@
+[
+ {"tool": "world_create", "args": {"name": "glass_grove", "size": 384, "seed": 33}},
+ {"tool": "generate", "args": {"pattern": "stone", "expression": "y <= 64 + 4*fbm(x,z,60)"}},
+ {"tool": "flatten", "args": {"area": "circle:0,-10,80", "y": 58, "feather": 20}},
+ {"tool": "fill", "args": {"area": "circle:0,-10,95", "level": 62}},
+ {"tool": "paint", "args": {"rules": [{"pattern": "sand", "max_y": 62, "depth": 2}, {"pattern": "70%grass_block,30%moss_block"}]}},
+ {"tool": "feature", "args": {"type": "giant_tree", "area": "circle:0,-10,170", "count": 14, "spacing": 34, "style": "crystal", "scale": 0.85, "jitter": 0.35, "seed": 2}},
+ {"tool": "feature", "args": {"type": "crystal", "points": "-70,40 → 75,30 → -95,-60 → 90,-80", "scale": 1.6, "shell": "60%pink_stained_glass,40%magenta_stained_glass", "core": "pearlescent_froglight", "base": "amethyst_block"}},
+ {"tool": "flora", "args": {"plants": "45%pink_petals,25%allium,20%short_grass,10%amethyst_cluster", "density": 0.18}},
+ {"tool": "view", "args": {"camera": "0,70,95", "look_at": "0,82,-50", "fov": 78, "time": "dusk", "sky": "#d39ad8", "fog": 0.15, "sun_azimuth": 200, "sun_elevation": 25, "width": 760, "height": 388}}
+]

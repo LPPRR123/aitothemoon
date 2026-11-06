@@ -1,0 +1,11 @@
+[
+ {"tool": "world_create", "args": {"name": "sky_pillars", "size": 448, "seed": 55}},
+ {"tool": "generate", "args": {"pattern": "stone", "expression": "y <= 40 + 4*fbm(x,z,60)"}},
+ {"tool": "fill", "args": {"area": "all", "level": 45}},
+ {"tool": "generate", "args": {"pattern": "white_wool", "expression": "y >= 60 + 6*fbm(x,z,30,3) && y <= 66 + 18*fbm(x,z,50,3) && fbm(x,z,80,3) > -0.25"}},
+ {"tool": "feature", "args": {"type": "spire", "points": "0,41,-40 → -75,41,-10 → 70,41,-20 → -40,41,-120 → 50,41,-110 → -120,41,-80 → 130,41,-90", "radius": 16, "height": 115, "taper": 0.12, "waterfalls": 1, "sink": 0}},
+ {"tool": "forest", "args": {"types": "70%oak,30%dark_oak", "spacing": 6, "density": 0.8, "on": "grass_block"}},
+ {"tool": "feature", "args": {"type": "bridge", "points": "-12,156,-40 → -62,156,-12", "sag": 0.1}},
+ {"tool": "feature", "args": {"type": "bridge", "points": "12,156,-40 → 58,156,-22", "sag": 0.1}},
+ {"tool": "view", "args": {"camera": "0,140,120", "look_at": "0,130,-60", "fov": 80, "fog": 0.12, "width": 760, "height": 388}}
+]

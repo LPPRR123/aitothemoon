@@ -3,7 +3,8 @@
 use crate::anvil;
 use crate::blocks::{self, Kind as BKind};
 use crate::editor::Editor;
-use crate::ops::{self, nature, structures, terrain, water};
+use crate::ops::{self, fantasy, nature, structures, terrain, water};
+use crate::raytrace;
 use crate::render;
 use crate::spec::{self, Area};
 use crate::world::{self, World};
@@ -60,6 +61,8 @@ ARGUMENT SYNTAX
 - mask: "stone,dirt" | "!air" | "#solid" "#liquid" "#foliage" "#plant" "#wood" "#air" "#existing" | "*".
 - expression (generate): variables x y z; + - * / % ^, comparisons, && || ! ?:; functions abs min max floor ceil round sqrt pow sin cos tan atan2 exp ln clamp lerp smoothstep step noise(x,z,scale) noise(x,y,z,scale) fbm(x,z,scale[,oct]) ridged(x,z,scale[,oct]) worley(x,z,scale) rand(x,z) height(x,z)=zone design heightfield, edge(x,z)=distance to zone border, zone(x,z), top(x,z)=current surface, dist(x,z,x0,z0). Expressions of the form "y <= f(x,z) && y > g(x,z)" are filled per column (fast).
 - Coordinates: worlds are centred on 0,0; north = -z. Overworld y -64..319, nether 0..255. Sea level is usually 62.
+
+FROM CONCEPT ART / REFERENCE IMAGES: decompose the image into (1) terrain base, (2) big hero features — use `feature` (giant_mushroom, floating_island, spire, crystal, giant_tree styles, ring, ribcage, skull, arch, bridge, fissure), (3) scatter (forest, flora, feature count=N in an area), (4) structures, (5) mood: time of day, sky tint, glow. Emissive blocks (sea_lantern, froglights, shroomlight, crying_obsidian, end_rod) and stained glass over an emissive layer give glowing looks; invisible `light[level=N]` blocks light things in-game at night (features place them automatically). Then call `view` with a camera that matches the image (camera, look_at, fov, time, sky, sun_azimuth/sun_elevation, ambient), compare with the reference, and fix the biggest differences first (composition and scale, then silhouettes, then colour and light). Export with time=night for night scenes.
 
 Results are short summaries (counts). Use `map` (top-down image with zone labels) and `view` (3D perspective image) to see results, `probe`/`stats` for numbers, `undo` to revert, `batch` to send many calls at once."##;
 
@@ -169,6 +172,16 @@ fn build() -> Vec<Tool> {
             P_WORLD, P_AREA, P_AT, P_RADIUS, ("types", "string", "weighted tree types"), ("spacing", "number", "min distance (default 7)"), ("density", "number", "0..1 (default 0.7)"),
             ("clump", "number", "0..1 clumping"), ("scale", "number", "size multiplier"), ("count", "integer", "max trees"), ("log", "string", "override trunk block"), ("leaves", "string", "override leaves/cap block"), ("on", "string", "ground mask"), ("max_slope", "integer", "default 3"), ("seed", "integer", "variation"),
         ], &[], op!(nature::op_forest)),
+        t("feature", Edit, "Large fantasy features for building scenes from concept art: giant_mushroom, floating_island, spire (sky pillar), crystal (cluster), giant_tree (styles broad/crystal/silver/dead/blood/swamp/glow), ring (floating rock ring), ribcage, skull, arch / giant root, bridge (rope bridge), fissure (glowing crack). Place at one point, several points, or scatter `count` in an area with size jitter. Every size/material is a parameter (see help topic=features).", vec![
+            P_WORLD, ("type", "string", "feature type"), P_AT, P_POINTS, P_AREA, ("count", "integer", "scatter this many in the area"), ("spacing", "number", "min distance when scattering"),
+            ("scale", "number", "size multiplier (default 1)"), ("jitter", "number", "random size variation when scattering (default 0.3)"), ("seed", "integer", "variation"), ("sink", "number", "sink into ground"), ("soft", "boolean", "don't overwrite existing solid blocks"),
+            ("height", "number", "height"), ("radius", "number", "main radius"), ("length", "number", "length"), ("width", "number", "width"), ("depth", "number", "depth"), ("thickness", "number", "thickness"),
+            ("cap_radius", "number", "giant_mushroom"), ("stem_radius", "number", "giant_mushroom"), ("trunk_radius", "number", "giant_tree"), ("crown_radius", "number", "giant_tree"), ("style", "string", "giant_tree style"),
+            ("altitude", "number", "floating_island/ring height above ground"), ("tilt", "number", "degrees"), ("azimuth", "number", "degrees, 0 = north"), ("cluster", "integer", "crystal count"),
+            ("material", "string", "main pattern"), ("cap", "string", "pattern"), ("cap_core", "string", "emissive layer under a glass cap, e.g. pearlescent_froglight"), ("stem", "string", "pattern"), ("spots", "string", "emissive spots pattern"), ("gills", "string", "pattern"), ("shell", "string", "pattern"), ("core", "string", "pattern"),
+            ("log", "string", "pattern"), ("leaves", "string", "pattern or none"), ("glow", "string", "emissive pattern"), ("hang", "any", "hanging pattern (or count for giant_mushroom)"), ("hang_block", "string", "giant_mushroom hanging strand pattern"), ("ledges", "integer", "spire grassy ledges"), ("top", "string", "pattern"), ("rock", "string", "pattern"),
+            ("lights", "string", "invisible light blocks that light the feature in-game at night, e.g. 'light[level=12]', or 'none'"), ("waterfalls", "integer", "number of waterfalls"), ("roots", "integer", "giant_tree roots"), ("ribs", "integer", "ribcage ribs"), ("socket", "string", "skull eye/nose lining pattern"), ("teeth", "string", "skull teeth pattern"), ("broken", "number", "ring gaps 0..1"), ("fill_to", "integer", "fissure: fill glow up to N blocks below the surface"), ("cover", "string", "fissure: translucent top layer over the glow"),
+        ], &["type"], op!(fantasy::op_feature)),
         t("tree", Edit, "Place a single tree.", vec![P_WORLD, P_AT, ("type", "string", "tree type"), ("scale", "number", "size"), ("log", "string", "trunk block"), ("leaves", "string", "leaves block"), ("seed", "integer", "variation")], &["at"], op!(nature::op_tree)),
         t("flora", Edit, "Scatter grass/flowers/fungi on top of the ground.", vec![P_WORLD, P_AREA, P_AT, P_RADIUS, ("plants", "string", "weighted pattern, e.g. '70%short_grass,10%poppy,20%dandelion'"), ("density", "number", "0..1 (default 0.25)"), ("patchiness", "number", "0..1"), ("on", "string", "ground mask")], &[], op!(nature::op_flora)),
         // ------------------------------------------------------------ structures
@@ -182,19 +195,25 @@ fn build() -> Vec<Tool> {
         t("paste", Edit, "Paste a library schematic at one point or many points.", vec![P_WORLD, ("name", "string", "library name (default clipboard)"), P_AT, P_POINTS, ("rotate", "any", "0/90/180/270 or 'random'"), ("ignore_air", "boolean", "default true"), ("sink", "integer", "sink into ground")], &[], paste),
         // ------------------------------------------------------------ inspection
         t("map", Read, "Render a top-down shaded map image with zone borders, zone ids and gates. Use it to check your work.", vec![P_WORLD, P_AREA, P_AT, P_RADIUS, ("size", "integer", "max pixels (default 768)"), ("mode", "string", "shaded | height | biome"), ("zones", "boolean", "draw zone borders (default true)"), ("labels", "boolean", "draw ids (default true)"), ("grid", "integer", "grid spacing in blocks (0 = none, default 200)")], &[], map),
-        t("view", Read, "Render a 3D perspective image of the terrain. Default: from the south looking at the map centre. Set camera/look_at (points, gate or zone ids).", vec![P_WORLD, ("camera", "string", "camera position x,y,z"), ("look_at", "string", "target point"), ("yaw", "number", "degrees, 0 = north"), ("pitch", "number", "degrees, negative = down"), ("width", "integer", "default 960"), ("height", "integer", "default 540"), ("fov", "number", "default 70"), ("distance", "number", "view distance")], &[], view),
+        t("view", Read, "Ray-traced 3D image of the world (overhangs, floating islands, glass, glowing blocks, shadows). Use it to compare your build with a reference image from a matching camera. Default camera: from the south looking at the map centre.", vec![
+            P_WORLD, ("camera", "string", "camera position x,y,z"), ("look_at", "string", "target point"), ("yaw", "number", "degrees, 0 = north"), ("pitch", "number", "degrees, negative = down"),
+            ("width", "integer", "default 960"), ("height", "integer", "default 540"), ("fov", "number", "horizontal degrees, default 70"), ("distance", "number", "view distance"),
+            ("time", "string", "day | dusk | night"), ("sky", "string", "sky/fog tint hex, e.g. #8a1010 for a blood-red sky"), ("fog", "number", "0..1 (default 0.3)"),
+            ("bloom", "number", "glow strength for emissive blocks (default 0.4 day, 1.0 night)"), ("shadows", "boolean", "default true"), ("sun_azimuth", "number", "sun/moon direction, degrees (0 = north, 90 = east)"), ("sun_elevation", "number", "sun/moon height in degrees"), ("ambient", "number", "ambient light multiplier (default 1)"), ("renderer", "string", "'fast' = old heightfield renderer"),
+        ], &[], view),
         t("probe", Read, "Describe a column: zone, biome, ground/top y and block layers.", vec![P_WORLD, P_AT], &["at"], probe),
         t("stats", Read, "Area statistics: height range, slopes, water coverage, top-block histogram, tree cover.", vec![P_WORLD, P_AREA, P_AT, P_RADIUS], &[], stats),
         t("history", Read, "Recent edits (undo stack).", vec![("limit", "integer", "default 20")], &[], history),
         t("undo", Session, "Undo the last edit(s), including zone changes.", vec![("steps", "integer", "default 1")], &[], |ed, a| Ok(Out::Text(ed.undo(spec::i(a, "steps", 1) as usize)?))),
         t("redo", Session, "Redo undone edit(s).", vec![("steps", "integer", "default 1")], &[], |ed, a| Ok(Out::Text(ed.redo(spec::i(a, "steps", 1) as usize)?))),
         t("batch", Session, "Run many tool calls in order: calls=[{tool:'forest', args:{...}}, ...]. Each is its own undo step. Image results are omitted.", vec![("calls", "array", "list of {tool, args}"), ("stop_on_error", "boolean", "default true")], &["calls"], batch),
-        t("help", Read, "Reference: syntax, terrain presets, tree types, structures, functions, biomes.", vec![("topic", "string", "syntax | presets | trees | structures | functions | biomes")], &[], help),
+        t("help", Read, "Reference: syntax, terrain presets, tree types, structures, functions, biomes.", vec![("topic", "string", "syntax | presets | trees | structures | features | functions | biomes")], &[], help),
         // ------------------------------------------------------------ IO
         t("export", Session, "Export worlds to a playable Minecraft Java save folder. Default mapping: first overworld world → overworld, the_nether world → nether, others → custom datapack dimensions.", vec![
             ("path", "string", "save folder (e.g. ~/.minecraft/saves/MyMap); default ./exports/<level_name>"), ("level_name", "string", "world name in the menu"),
             ("worlds", "string", "mapping 'main=overworld,outlands=the_nether' (default: auto)"), ("spawn", "string", "x,y,z (default: map centre surface)"),
             ("data_version", "integer", "chunk DataVersion (default 4189 = 1.21.4; newer games upgrade it)"), ("version_name", "string", "version name for level.dat"),
+            ("time", "string", "day (default, normal cycle) | noon | dusk | dawn | night — non-day values freeze the clock (eternal night)"), ("daylight_cycle", "boolean", "override whether time advances"),
         ], &[], export),
         t("import", Session, "Import a dimension of an existing Java save (1.18+) as a new world.", vec![("path", "string", "save folder"), ("dimension", "string", "overworld | the_nether | the_end | ns:name"), ("name", "string", "new world name"), ("rect", "string", "block rect x0,z0,x1,z1 to limit the import")], &["path"], import),
     ]
@@ -516,18 +535,54 @@ fn map(ed: &mut Editor, a: &Value) -> Result<Out> {
     Ok(Out::Image { png, caption: legend })
 }
 
+pub fn parse_hex(s: &str) -> Option<[f64; 3]> {
+    let h = s.trim().trim_start_matches('#');
+    if h.len() != 6 {
+        return None;
+    }
+    let v = u32::from_str_radix(h, 16).ok()?;
+    let f = |x: u32| ((x & 255) as f64 / 255.0).powi(2);
+    Some([f(v >> 16), f(v >> 8), f(v)])
+}
+
 fn view(ed: &mut Editor, a: &Value) -> Result<Out> {
     let w = ed.world(a)?;
-    let (cam, yaw, pitch, desc) = render::camera_from_args(w, a)?;
+    let (cam, yaw, pitch, desc, focus) = render::camera_from_args(w, a)?;
     let (sx, sz) = w.size();
-    let o = render::ViewOpts {
-        width: spec::i(a, "width", 960).clamp(64, 1920) as usize,
-        height: spec::i(a, "height", 540).clamp(64, 1080) as usize,
-        fov: spec::f(a, "fov", 70.0).clamp(20.0, 120.0),
-        distance: spec::f(a, "distance", (sx.max(sz) as f64) * 1.2),
+    let width = spec::i(a, "width", 960).clamp(64, 1920) as usize;
+    let height = spec::i(a, "height", 540).clamp(64, 1080) as usize;
+    let fov = spec::f(a, "fov", 70.0).clamp(20.0, 120.0);
+    let distance = spec::f(a, "distance", (sx.max(sz) as f64) * 1.2);
+    if spec::s(a, "renderer") == Some("fast") {
+        let png = render::render_view(w, cam, yaw, pitch, &render::ViewOpts { width, height, fov, distance })?;
+        return Ok(Out::Image { png, caption: desc });
+    }
+    let time = raytrace::Time::parse(spec::s(a, "time").unwrap_or("day"));
+    let sky = match spec::s(a, "sky") {
+        Some(s) => Some(parse_hex(s).ok_or_else(|| anyhow!("sky must be a hex colour like #a01818"))?),
+        None => None,
     };
-    let png = render::render_view(w, cam, yaw, pitch, &o)?;
-    Ok(Out::Image { png, caption: desc })
+    let o = raytrace::RtOpts {
+        width,
+        height,
+        fov,
+        distance,
+        time,
+        sky,
+        fog: spec::f(a, "fog", 0.3).clamp(0.0, 1.0),
+        bloom: spec::f(a, "bloom", if time == raytrace::Time::Night { 1.0 } else { 0.4 }).clamp(0.0, 3.0),
+        shadows: spec::b(a, "shadows", true),
+        sun: if a.get("sun_azimuth").is_some() || a.get("sun_elevation").is_some() {
+            Some((spec::f(a, "sun_azimuth", 230.0), spec::f(a, "sun_elevation", 35.0)))
+        } else {
+            None
+        },
+        ambient: spec::f(a, "ambient", 1.0).clamp(0.0, 10.0),
+        focus,
+    };
+    let t0 = std::time::Instant::now();
+    let png = raytrace::render(w, cam, yaw, pitch, &o)?;
+    Ok(Out::Image { png, caption: format!("{desc}, {:?}, ray-traced in {} ms", time, t0.elapsed().as_millis()) })
 }
 
 fn probe(ed: &mut Editor, a: &Value) -> Result<Out> {
@@ -664,6 +719,7 @@ fn help(_ed: &mut Editor, a: &Value) -> Result<Out> {
     let s = match topic {
         "presets" => zones::PRESETS.iter().map(|(k, p)| format!("{k}: base {} relief {} scale {} ridged {} biome {}", p.base, p.relief, p.scale, p.ridged, p.biome)).collect::<Vec<_>>().join("\n"),
         "trees" => nature::TREE_TYPES.join(", "),
+        "features" => fantasy::FEATURES.iter().map(|(k, d)| format!("{k}: {d}")).collect::<Vec<_>>().join("\n"),
         "structures" => structures::BUILTINS.iter().map(|(k, d)| format!("{k}: {d}")).collect::<Vec<_>>().join("\n"),
         "functions" => crate::expr::FUNCS.iter().map(|f| f.2).collect::<Vec<_>>().join("\n"),
         "biomes" => anvil::VANILLA_BIOMES.join(", "),
@@ -735,7 +791,15 @@ fn export(ed: &mut Editor, a: &Value) -> Result<Out> {
             (0, y, 0)
         }
     };
-    anvil::write_level_dat(&path, &anvil::ExportOpts { level_name: level_name.clone(), data_version: dv, version_name: vname.clone(), spawn }, &custom)?;
+    let (day_time, cycle_default) = match spec::s(a, "time").unwrap_or("day") {
+        "night" | "midnight" => (18000, false),
+        "dusk" | "sunset" => (12500, false),
+        "dawn" | "sunrise" => (23500, false),
+        "noon" => (6000, false),
+        _ => (6000, true),
+    };
+    let daylight_cycle = spec::b(a, "daylight_cycle", cycle_default);
+    anvil::write_level_dat(&path, &anvil::ExportOpts { level_name: level_name.clone(), data_version: dv, version_name: vname.clone(), spawn, day_time, daylight_cycle }, &custom)?;
     ed.emit(json!({"type": "exported", "path": path.to_string_lossy()}));
     let mut msg = format!("exported '{level_name}' to {} (DataVersion {dv}, {vname})\n{}", path.display(), report.join("\n"));
     if !custom.is_empty() {
@@ -821,6 +885,27 @@ mod tests {
         run(&mut ed, "tree", json!({"at": "30,30", "type": "glowcap"}));
         run(&mut ed, "copy", json!({"from": "8,78,8", "to": "16,86,16", "name": "hut"}));
         run(&mut ed, "paste", json!({"name": "hut", "points": "50,50 → 60,-60", "rotate": "random"}));
+        for (k, extra) in [
+            ("giant_mushroom", json!({"at": "W1", "cap_core": "sea_lantern", "cap": "purple_stained_glass"})),
+            ("floating_island", json!({"at": "0,170,0", "radius": 10})),
+            ("spire", json!({"at": "E1", "height": 40, "radius": 5, "waterfalls": 1})),
+            ("crystal", json!({"area": "C0", "count": 3, "spacing": 8})),
+            ("giant_tree", json!({"at": "S1", "style": "silver", "scale": 0.4})),
+            ("ring", json!({"at": "0,180,40", "radius": 10})),
+            ("ribcage", json!({"at": "-60,60", "length": 30, "height": 12})),
+            ("skull", json!({"at": "60,-60", "size": 8})),
+            ("arch", json!({"points": "-30,30 → 30,30"})),
+            ("bridge", json!({"points": "-10,100,0 → 10,100,0"})),
+            ("fissure", json!({"points": "-60,-100 → 60,-100", "fill_to": 1, "cover": "purple_stained_glass"})),
+        ] {
+            let mut args = extra.clone();
+            args["type"] = json!(k);
+            let s = run(&mut ed, "feature", args);
+            assert!(!s.contains(": 0 blocks"), "{k}: {s}");
+        }
+        assert!(ed.run_tool("feature", &json!({"type": "dragon", "at": "0,0"})).is_err());
+        let Out::Image { png, caption } = ed.run_tool("view", &json!({"width": 96, "height": 64, "time": "night", "sky": "#8a1010"})).unwrap() else { panic!() };
+        assert!(png.len() > 100 && caption.contains("Night"), "{caption}");
         let probe = run(&mut ed, "probe", json!({"at": "C0"}));
         assert!(probe.contains("zone C0"), "{probe}");
         run(&mut ed, "stats", json!({"area": "C0"}));
@@ -850,7 +935,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         run(&mut ed, "world_create", json!({"name": "nether", "size": 128, "dimension": "the_nether"}));
         run(&mut ed, "generate", json!({"pattern": "netherrack", "expression": "y <= 40 + 10*fbm(x,z,40)"}));
-        let ex = run(&mut ed, "export", json!({"path": dir.to_string_lossy(), "level_name": "E2E"}));
+        let ex = run(&mut ed, "export", json!({"path": dir.to_string_lossy(), "level_name": "E2E", "time": "night"}));
         assert!(ex.contains("main → overworld") && ex.contains("nether → the_nether"), "{ex}");
         run(&mut ed, "import", json!({"path": dir.to_string_lossy(), "name": "back"}));
         let (a, b2) = (&ed.worlds[0], ed.worlds.iter().find(|w| w.name == "back").unwrap());

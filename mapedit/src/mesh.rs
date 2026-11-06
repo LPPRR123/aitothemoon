@@ -109,7 +109,7 @@ pub fn chunk_mesh(w: &World, cx: i32, cz: i32) -> Vec<u8> {
                 for lx in 0..16i32 {
                     let id = sec.get(sidx(lx as usize, ly, lz as usize));
                     let info: &BlockInfo = &infos[id as usize];
-                    if matches!(info.kind, Kind::Air | Kind::Plant) {
+                    if matches!(info.kind, Kind::Air | Kind::Plant) || info.invisible {
                         continue;
                     }
                     let y = yi + w.min_y;

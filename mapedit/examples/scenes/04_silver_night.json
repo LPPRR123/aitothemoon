@@ -1,0 +1,11 @@
+[
+ {"tool": "world_create", "args": {"name": "silver_night", "size": 384, "seed": 44}},
+ {"tool": "generate", "args": {"pattern": "stone", "expression": "y <= 64 + 4*fbm(x,z,60)"}},
+ {"tool": "paint", "args": {"rules": [{"pattern": "60%snow_block,25%calcite,15%white_concrete_powder", "depth": 2}]}},
+ {"tool": "feature", "args": {"type": "giant_tree", "area": "circle:0,0,160", "count": 12, "spacing": 40, "style": "silver", "scale": 1.25, "jitter": 0.3, "seed": 4}},
+ {"tool": "structure", "args": {"type": "tower", "points": "0,-70 → -18,-60 → 18,-60", "size": 30, "material": "quartz_block"}},
+ {"tool": "structure", "args": {"type": "gate", "at": "0,-45", "size": 11, "material": "quartz_block"}},
+ {"tool": "structure", "args": {"type": "obelisk", "points": "-30,-30 → 30,-30", "size": 16, "material": "quartz_block"}},
+ {"tool": "flora", "args": {"plants": "50%short_grass,30%azure_bluet,10%sea_pickle,10%light_blue_stained_glass_pane", "density": 0.25}},
+ {"tool": "view", "args": {"camera": "10,70,60", "look_at": "0,90,-60", "fov": 84, "time": "night", "sky": "#1b2a6a", "fog": 0.3, "bloom": 1.0, "ambient": 2.0, "sun_azimuth": 25, "sun_elevation": 16, "width": 760, "height": 388}}
+]

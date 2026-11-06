@@ -1,0 +1,19 @@
+[
+ {"tool": "world_create", "args": {"name": "sky_islands", "size": 448, "seed": 22}},
+ {"tool": "generate", "args": {"pattern": "white_wool", "expression": "y >= 62 + 6*fbm(x,z,30,3) && y <= 70 + 22*fbm(x,z,55,3) && fbm(x,z,90,3) > -0.2"}},
+ {"tool": "feature", "args": {"type": "floating_island", "at": "0,140,-20", "radius": 36, "waterfalls": 3, "fall": 80, "seed": 1}},
+ {"tool": "feature", "args": {"type": "floating_island", "at": "-88,130,-30", "radius": 26, "waterfalls": 2, "fall": 70, "seed": 2}},
+ {"tool": "feature", "args": {"type": "floating_island", "at": "90,134,-30", "radius": 28, "waterfalls": 2, "fall": 70, "seed": 3}},
+ {"tool": "feature", "args": {"type": "floating_island", "at": "-50,150,-130", "radius": 20, "seed": 4}},
+ {"tool": "feature", "args": {"type": "floating_island", "at": "55,112,45", "radius": 15, "waterfalls": 1, "seed": 5}},
+ {"tool": "feature", "args": {"type": "floating_island", "at": "-150,120,40", "radius": 14, "seed": 6}},
+ {"tool": "feature", "args": {"type": "floating_island", "at": "160,145,-120", "radius": 18, "seed": 7}},
+ {"tool": "feature", "args": {"type": "giant_tree", "points": "-95,-40 → 98,-22 → -20,-35 → 30,-10 → 58,45", "style": "broad", "scale": 0.38, "roots": 3, "seed": 4}},
+ {"tool": "forest", "args": {"types": "60%oak,30%dark_oak,10%birch", "spacing": 8, "density": 0.6, "on": "grass_block"}},
+ {"tool": "structure", "args": {"type": "tower", "at": "5,-30", "size": 18}},
+ {"tool": "structure", "args": {"type": "ruin", "points": "-80,-25 → 85,-40", "rotate": "random"}},
+ {"tool": "feature", "args": {"type": "bridge", "points": "-30,142,-25 → -65,132,-30", "sag": 0.12}},
+ {"tool": "feature", "args": {"type": "bridge", "points": "32,142,-25 → 65,136,-30", "sag": 0.12}},
+ {"tool": "feature", "args": {"type": "bridge", "points": "10,141,10 → 48,114,40", "sag": 0.08}},
+ {"tool": "view", "args": {"camera": "0,146,118", "look_at": "0,128,-30", "width": 760, "height": 388, "fov": 80, "fog": 0.08}}
+]

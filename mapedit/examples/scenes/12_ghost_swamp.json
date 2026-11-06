@@ -1,0 +1,11 @@
+[
+ {"tool": "world_create", "args": {"name": "ghost_swamp", "size": 384, "seed": 121}},
+ {"tool": "generate", "args": {"pattern": "stone", "expression": "y <= 62 + 3*fbm(x,z,35)"}},
+ {"tool": "paint", "args": {"rules": [{"pattern": "55%mud,30%grass_block,15%moss_block", "depth": 2}]}},
+ {"tool": "fill", "args": {"area": "all", "level": 62}},
+ {"tool": "feature", "args": {"type": "giant_tree", "area": "circle:0,0,175", "count": 18, "spacing": 28, "style": "swamp", "scale": 0.55, "jitter": 0.4, "seed": 12}},
+ {"tool": "structure", "args": {"type": "house", "points": "25,-45 → -50,-30", "rotate": "random", "size": 8, "material": "dark_oak_planks", "sink": 1}},
+ {"tool": "feature", "args": {"type": "crystal", "area": "circle:0,-20,120", "count": 28, "spacing": 12, "scale": 0.14, "jitter": 0.3, "cluster": 1, "shell": "cyan_stained_glass", "core": "sea_lantern", "base": "mud", "lights": "light[level=10]"}},
+ {"tool": "flora", "args": {"plants": "60%short_grass,30%fern,10%soul_lantern", "density": 0.15, "on": "grass_block,moss_block,mud"}},
+ {"tool": "view", "args": {"camera": "0,70,80", "look_at": "0,70,-60", "fov": 80, "time": "night", "sky": "#0f4a48", "fog": 0.45, "bloom": 1.0, "ambient": 2.4, "width": 760, "height": 388}}
+]

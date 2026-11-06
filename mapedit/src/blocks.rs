@@ -42,6 +42,12 @@ pub enum Kind {
 pub struct BlockInfo {
     pub kind: Kind,
     pub color: [u8; 3],
+    /// Light level 0..15 the block emits.
+    pub emit: u8,
+    /// Light passes through (glass, ice): rendered translucent.
+    pub translucent: bool,
+    /// Never rendered (light, barrier, structure_void).
+    pub invisible: bool,
 }
 
 impl BlockInfo {
@@ -172,10 +178,15 @@ fn base_name(name: &str) -> &str {
 fn info_for(name: &str) -> BlockInfo {
     let b = base_name(name);
     let kind = classify(b);
-    BlockInfo { kind, color: color_for(b) }
+    let translucent = b.contains("glass") || b == "ice" || b == "slime_block" || b == "honey_block";
+    let invisible = matches!(b, "light" | "barrier" | "structure_void");
+    BlockInfo { kind, color: color_for(b), emit: emit_for(b, name), translucent, invisible }
 }
 
 fn classify(b: &str) -> Kind {
+    if matches!(b, "light" | "structure_void") {
+        return Kind::Plant;
+    }
     if matches!(b, "air" | "cave_air" | "void_air") {
         return Kind::Air;
     }
@@ -228,8 +239,58 @@ fn classify(b: &str) -> Kind {
     Kind::Solid
 }
 
+fn emit_for(b: &str, full: &str) -> u8 {
+    if b == "light" {
+        // invisible light block: light[level=N], default 15
+        return full.split("level=").nth(1).and_then(|s| s.trim_end_matches(']').split(',').next()?.parse().ok()).unwrap_or(15);
+    }
+    match b {
+        "glowstone" | "sea_lantern" | "shroomlight" | "lava" | "jack_o_lantern" | "lantern" | "beacon" | "fire" | "campfire" | "end_gateway" | "light"
+        | "ochre_froglight" | "verdant_froglight" | "pearlescent_froglight" | "conduit" | "lava_cauldron" => 15,
+        "torch" | "wall_torch" | "end_rod" => 14,
+        "soul_lantern" | "soul_torch" | "soul_wall_torch" | "soul_fire" | "soul_campfire" | "crying_obsidian" => 10,
+        "glow_lichen" | "enchanting_table" | "ender_chest" => 7,
+        "sea_pickle" | "sculk_catalyst" | "amethyst_cluster" => 5,
+        "large_amethyst_bud" => 4,
+        "magma_block" | "medium_amethyst_bud" => 3,
+        "redstone_lamp" if full.contains("lit=true") => 15,
+        "cave_vines" | "cave_vines_plant" if full.contains("berries=true") => 14,
+        _ => 0,
+    }
+}
+
+const DYES: &[(&str, u32)] = &[
+    ("white", 0xe9ecec), ("orange", 0xf07613), ("magenta", 0xbd44b3), ("light_blue", 0x3aafd9), ("yellow", 0xf8c527), ("lime", 0x70b919),
+    ("pink", 0xed8dac), ("gray", 0x3e4447), ("light_gray", 0x8e8e86), ("cyan", 0x158991), ("purple", 0x792aac), ("blue", 0x35399d),
+    ("brown", 0x724728), ("green", 0x546d1b), ("red", 0xa12722), ("black", 0x141519),
+];
+
+/// Colours of dyed blocks: wool, concrete, stained glass, carpets, etc.
+fn dye_color(b: &str) -> Option<u32> {
+    for suffix in ["_stained_glass_pane", "_stained_glass", "_concrete_powder", "_concrete", "_wool", "_carpet", "_glazed_terracotta", "_candle", "_bed", "_banner", "_shulker_box"] {
+        if let Some(d) = b.strip_suffix(suffix) {
+            // light_blue / light_gray must be matched before blue / gray
+            if let Some(&(_, c)) = DYES.iter().find(|(n, _)| *n == d) {
+                if suffix.contains("glass") {
+                    // glass reads a little lighter than the dye
+                    let (r, g, bl) = ((c >> 16) & 255, (c >> 8) & 255, c & 255);
+                    let l = |v: u32| (v * 3 + 255) / 4;
+                    return Some((l(r) << 16) | (l(g) << 8) | l(bl));
+                }
+                return Some(c);
+            }
+        }
+    }
+    None
+}
+
 /// Approximate average texture colours for map rendering.
 fn color_for(b: &str) -> [u8; 3] {
+    if !b.ends_with("terracotta") || b.ends_with("glazed_terracotta") {
+        if let Some(c) = dye_color(b) {
+            return [(c >> 16) as u8, (c >> 8) as u8, c as u8];
+        }
+    }
     let c: Option<u32> = match b {
         "stone" => Some(0x7d7d7d),
         "granite" => Some(0x956756),
@@ -258,7 +319,9 @@ fn color_for(b: &str) -> [u8; 3] {
         "clay" => Some(0xa0a6b3),
         "gravel" => Some(0x837f7e),
         "sand" => Some(0xdbcfa3),
-        "sandstone" | "smooth_sandstone" | "cut_sandstone" => Some(0xd8cb9b),
+        "sandstone" | "smooth_sandstone" | "cut_sandstone" | "chiseled_sandstone" | "sandstone_wall" | "sandstone_stairs" | "sandstone_slab" | "smooth_sandstone_slab" | "cut_sandstone_slab" => Some(0xd8cb9b),
+        "chiseled_red_sandstone" | "red_sandstone_wall" => Some(0xb5621f),
+        "polished_blackstone" | "chiseled_polished_blackstone" => Some(0x353038),
         "red_sand" => Some(0xbe6621),
         "red_sandstone" | "smooth_red_sandstone" | "cut_red_sandstone" => Some(0xb5621f),
         "terracotta" => Some(0x985e43),
@@ -291,7 +354,7 @@ fn color_for(b: &str) -> [u8; 3] {
         "soul_sand" | "soul_soil" => Some(0x51402f),
         "basalt" | "polished_basalt" => Some(0x49484d),
         "smooth_basalt" => Some(0x48484e),
-        "blackstone" | "polished_blackstone" | "polished_blackstone_bricks" => Some(0x2a2328),
+        "blackstone" | "polished_blackstone_bricks" => Some(0x2a2328),
         "glowstone" => Some(0xab8354),
         "shroomlight" => Some(0xf09246),
         "nether_wart_block" => Some(0x720203),
@@ -303,6 +366,21 @@ fn color_for(b: &str) -> [u8; 3] {
         "bone_block" => Some(0xe5e1cf),
         "moss_block" => Some(0x596e2d),
         "amethyst_block" | "budding_amethyst" => Some(0x8562bf),
+        "amethyst_cluster" | "large_amethyst_bud" | "medium_amethyst_bud" => Some(0xa47fe0),
+        "ochre_froglight" => Some(0xf6e6a8),
+        "redstone_lamp" => Some(0xc2793e),
+        "light" => Some(0xfff2dc),
+        "verdant_froglight" => Some(0xe3f4cf),
+        "pearlescent_froglight" => Some(0xf6dbe9),
+        "end_rod" => Some(0xf2ece4),
+        "sculk" | "sculk_catalyst" => Some(0x0d1e24),
+        "tinted_glass" => Some(0x2c2730),
+        "dripstone_block" | "pointed_dripstone" => Some(0x866b5c),
+        "mossy_cobblestone_wall" => Some(0x6e775f),
+        "chain" => Some(0x3b3f4a),
+        "cave_vines" | "cave_vines_plant" => Some(0x6a7a2c),
+        "glow_lichen" => Some(0x70837a),
+        "reinforced_deepslate" => Some(0x51564f),
         "prismarine" => Some(0x63a097),
         "dark_prismarine" => Some(0x335b4b),
         "sea_lantern" => Some(0xacc8be),
@@ -356,6 +434,7 @@ fn color_for(b: &str) -> [u8; 3] {
         "torch" | "lantern" => Some(0xf6c63d),
         "soul_lantern" => Some(0x56c6c8),
         "glass" => Some(0xc0dce0),
+        "glass_pane" => Some(0xc0dce0),
         "white_wool" | "white_concrete" => Some(0xe9ecec),
         "purple_concrete" | "purple_wool" => Some(0x641f9c),
         "magenta_concrete" => Some(0xa9309f),
@@ -444,5 +523,23 @@ mod tests {
         assert!(infos()[leaves as usize].kind == Kind::Foliage);
         let stone = id("stone");
         assert!(infos()[stone as usize].solid());
+    }
+}
+
+#[cfg(test)]
+mod tests2 {
+    use super::*;
+    #[test]
+    fn dyes_and_emit() {
+        let lb = id("light_blue_stained_glass");
+        let sl = id("sea_lantern");
+        let inf = infos();
+        assert!(inf[lb as usize].translucent);
+        assert!(inf[lb as usize].color[2] > 200);
+        assert_eq!(inf[sl as usize].emit, 15);
+        let v = id("cave_vines[berries=true]");
+        assert_eq!(infos()[v as usize].emit, 14);
+        let gray = id("gray_wool");
+        assert_eq!(infos()[gray as usize].color, [0x3e, 0x44, 0x47]);
     }
 }
