@@ -213,6 +213,19 @@ flowchart LR
 - 每条记录都有 `checked` / `rejected`、来源证据和审核理由，可以追查"它为什么学会了这个"，也可以一键撤销。
 - 使用时按次数加权，越常用的越优先。
 
+### 3.7 参考：已经实现类似机制的开源项目（2026-11 检索）
+
+没有找到在游戏里完整实现"新情况调用 AI → 审核 → 存库 → 下次不调用 AI"的项目；通用 AI Agent 领域有几个做法很接近：
+
+| 项目 | 做法 | 我们已经有的 | 可以借鉴的 |
+|---|---|---|---|
+| **muscle-mem**（pig-dot-dev，Python SDK，开源） | 记录 AI 的工具调用过程，遇到同类任务直接**确定性重放**，发现异常就退回给 AI；目标是"把 LLM 从高频路径里拿掉" | 同样的架构：策略库命中就重放，失败交给 Claude | **环境检查（Check）**：每个工具都可以带"执行前检查"和"执行后检查"，记录时抓取环境特征，重放时比较，不一致就不重放。我们现在只看主人的话，环境变了要等某一步失败才发现 |
+| **ASI**（Agent Skill Induction，CMU，论文 + 代码） | 从成功的过程里归纳出可执行的技能，**用新技能把原任务重新做一遍，成功才保留** | 静态的"重放一致性检查" + 试用期（成功 2 次转正） | 真正重新执行一遍来验证；在服务器上不现实，但可以在本地测试服上做 |
+| **Agentic Plan Caching**（NeurIPS 2025 论文） | 缓存"计划模板"而不是缓存回答，换个参数套用到新任务；平均省 50% 费用，保留 96.6% 的效果 | 同样缓存做法（步骤），不缓存回答 | 话对不上触发说法时，先用便宜的小模型判断"是不是某个已学策略的变体"，再决定要不要叫大模型 |
+| **AWM**（Agent Workflow Memory） | 从过去的过程里提炼工作流，作为提示给 AI 参考 | — | 策略没法直接重放时，把相关的已学策略当作提示给 Claude，让它少走几步 |
+
+**结论**：方向和业界做法一致，`muscle-mem` 基本就是同一套思路的通用版本。下一步最值得加的是**环境检查**：给策略的每一步加上执行前/后检查（例如"点之前确认打开的是「服务器菜单」"、"挖之前确认附近有这种方块"、"做完确认背包里多了东西"），让重放更安全，失败更早被发现。
+
 ---
 
 ## 4. 长期记忆设计（P3）
@@ -404,3 +417,7 @@ flowchart LR
 - Behavior Trees Enable Structured Programming of Language Model Agents：https://arxiv.org/pdf/2404.07439
 - mineflayer-gui（多层 GUI 菜单）：https://www.npmjs.com/package/mineflayer-gui
 - 记忆框架对比（Mem0 / Zep / Letta，2026）：https://atlan.com/know/best-ai-agent-memory-frameworks-2026/
+- muscle-mem（AI Agent 行为缓存）：https://github.com/pig-dot-dev/muscle-mem
+- ASI（Inducing Programmatic Skills for Agentic Tasks）：https://arxiv.org/abs/2504.06821 ，代码 https://github.com/zorazrw/agent-skill-induction
+- Agentic Plan Caching：https://arxiv.org/abs/2506.14852
+- Agent Workflow Memory：https://arxiv.org/abs/2409.07429
