@@ -1,0 +1,18 @@
+[package]
+name = "mapedit"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.104"
+axum = { version = "0.8.9", features = ["ws"] }
+base64 = "0.23.1"
+fastnbt = "2.6.3"
+flate2 = "1.1.11"
+futures = "0.3.34"
+parking_lot = "0.13.0"
+png = "0.18.1"
+rayon = "1.12.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tokio = { version = "1.54.1", features = ["full"] }
