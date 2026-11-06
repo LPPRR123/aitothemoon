@@ -32,7 +32,58 @@ USAGE:
         written to DIR (default ./run-output). --serve keeps the viewer open.
   mapedit tools
         Print the tool list as Markdown.
+  mapedit diff SAVE_A SAVE_B [--dim overworld]
+        Compare two saves block by block (e.g. our export vs. the same world
+        after Minecraft re-saved it). Properties the game adds are ignored.
 ";
+
+/// Same block if names match and every property set in `a` has the same value in `b`.
+fn same_state(a: &str, b: &str) -> bool {
+    let (na, pa) = blocks::split_state(a);
+    let (nb, pb) = blocks::split_state(b);
+    if na != nb {
+        return false;
+    }
+    pa.iter().all(|(k, v)| pb.iter().any(|(k2, v2)| k2 == k && v2 == v))
+}
+
+fn diff(a: &str, b: &str, dim: &str) -> anyhow::Result<bool> {
+    let wa = anvil::import(std::path::Path::new(a), dim, "a", None)?;
+    let wb = anvil::import(std::path::Path::new(b), dim, "b", None)?;
+    println!("A: bounds {:?} y {}..{}  B: bounds {:?} y {}..{}", wa.bounds(), wa.min_y, wa.max_y(), wb.bounds(), wb.min_y, wb.max_y());
+    let (x0, z0, x1, z1) = wa.bounds();
+    let mut same_cache: std::collections::HashMap<(u16, u16), bool> = Default::default();
+    let mut total: u64 = 0;
+    let mut bad: u64 = 0;
+    let mut pairs: std::collections::HashMap<(String, String), u64> = Default::default();
+    let mut example: std::collections::HashMap<(String, String), (i32, i32, i32)> = Default::default();
+    for z in z0..z1 {
+        for x in x0..x1 {
+            for y in wa.min_y..wa.max_y() {
+                let (ia, ib) = (wa.get(x, y, z), wb.get(x, y, z));
+                if blocks::is_air(ia) && blocks::is_air(ib) {
+                    continue;
+                }
+                total += 1;
+                let ok = *same_cache.entry((ia, ib)).or_insert_with(|| ia == ib || same_state(&blocks::name(ia), &blocks::name(ib)));
+                if !ok {
+                    bad += 1;
+                    let k = (blocks::name(ia), blocks::name(ib));
+                    example.entry(k.clone()).or_insert((x, y, z));
+                    *pairs.entry(k).or_default() += 1;
+                }
+            }
+        }
+    }
+    println!("compared {total} non-air positions, {bad} differ ({:.4}%)", bad as f64 * 100.0 / total.max(1) as f64);
+    let mut v: Vec<_> = pairs.into_iter().collect();
+    v.sort_by(|a, b| b.1.cmp(&a.1));
+    for ((ba, bb), n) in v.iter().take(25) {
+        let e = example[&(ba.clone(), bb.clone())];
+        println!("  {n:>10} × {ba}  →  {bb}   e.g. {},{},{}", e.0, e.1, e.2);
+    }
+    Ok(bad == 0)
+}
 
 fn flag(args: &[String], name: &str) -> Option<String> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1).cloned())
@@ -126,6 +177,21 @@ fn main() {
             }
             if failed > 0 {
                 std::process::exit(1);
+            }
+        }
+        "diff" => {
+            let (Some(a), Some(b)) = (args.get(1), args.get(2)) else {
+                eprintln!("{USAGE}");
+                std::process::exit(2);
+            };
+            let dim = flag(&args, "--dim").unwrap_or_else(|| "overworld".into());
+            match diff(a, b, &dim) {
+                Ok(true) => println!("IDENTICAL"),
+                Ok(false) => std::process::exit(1),
+                Err(e) => {
+                    eprintln!("diff failed: {e:#}");
+                    std::process::exit(2);
+                }
             }
         }
         "tools" => {

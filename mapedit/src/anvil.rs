@@ -307,6 +307,7 @@ pub fn write_level_dat(save: &Path, o: &ExportOpts, custom_dims: &[String]) -> R
         ("thundering", Nbt::Byte(0)),
         ("clearWeatherTime", Nbt::Int(0)),
         ("DataPacks", c(vec![("Enabled", Nbt::List(packs)), ("Disabled", Nbt::List(vec![]))])),
+        ("DragonFight", c(vec![("NeedsStateScanning", Nbt::Byte(1)), ("DragonKilled", Nbt::Byte(0)), ("PreviouslyKilled", Nbt::Byte(0))])),
         (
             "GameRules",
             c(vec![
@@ -354,12 +355,21 @@ fn get<'a>(m: &'a HashMap<String, Nbt>, k: &str) -> Option<&'a Nbt> {
 }
 
 fn state_from_nbt(v: &Nbt) -> String {
+    // 26.x stores property-less states as a bare string
+    if let Nbt::String(s) = v {
+        return s.clone();
+    }
     let Nbt::Compound(m) = v else { return "minecraft:air".into() };
-    let name = match get(m, "Name") {
+    // 26.x heterogeneous lists wrap bare strings as {"": "minecraft:stone"}
+    if let Some(Nbt::String(s)) = m.get("") {
+        return s.clone();
+    }
+    // 26.x renamed Name/Properties to id/properties
+    let name = match get(m, "Name").or_else(|| get(m, "id")) {
         Some(Nbt::String(s)) => s.clone(),
         _ => "minecraft:air".into(),
     };
-    match get(m, "Properties") {
+    match get(m, "Properties").or_else(|| get(m, "properties")) {
         Some(Nbt::Compound(p)) if !p.is_empty() => {
             let mut kv: Vec<String> = p
                 .iter()
@@ -445,9 +455,33 @@ fn read_chunk_sections(nbt: &Nbt, min_sy: i32, n_sections: usize) -> Result<Chun
     Ok(ch)
 }
 
+/// Region folder of a dimension in an existing save. Handles both the classic
+/// layout (region/, DIM-1/region) and the 26.x layout where every dimension
+/// lives under dimensions/<namespace>/<name>/region.
+pub fn find_dimension_dir(save: &Path, dim: &str) -> PathBuf {
+    let legacy = dimension_dir(save, dim);
+    if legacy.is_dir() {
+        return legacy;
+    }
+    let id = match dim.trim_start_matches("minecraft:") {
+        "overworld" => "minecraft:overworld".to_string(),
+        "the_nether" | "nether" => "minecraft:the_nether".to_string(),
+        "the_end" | "end" => "minecraft:the_end".to_string(),
+        other if other.contains(':') => other.to_string(),
+        other => format!("mapedit:{other}"),
+    };
+    let (ns, n) = id.split_once(':').unwrap();
+    let modern = save.join("dimensions").join(ns).join(n).join("region");
+    if modern.is_dir() {
+        modern
+    } else {
+        legacy
+    }
+}
+
 /// Import one dimension of a save. Optional chunk-rect limit (cx0,cz0,cx1,cz1 inclusive).
 pub fn import(save: &Path, dim: &str, name: &str, limit: Option<(i32, i32, i32, i32)>) -> Result<World> {
-    let dir = dimension_dir(save, dim);
+    let dir = find_dimension_dir(save, dim);
     let (min_y, height) = match dim {
         "the_nether" | "nether" | "minecraft:the_nether" | "the_end" | "end" | "minecraft:the_end" => (0, 256),
         _ => (-64, 384),
@@ -562,6 +596,21 @@ mod tests {
         let p = pack(&idx, bits);
         assert_eq!(p.len(), 4096usize.div_ceil(10));
         assert_eq!(unpack(&p, bits, 4096), idx);
+    }
+
+    #[test]
+    fn palette_entry_formats() {
+        // classic (≤1.21.x)
+        let mut p = HashMap::new();
+        p.insert("axis".to_string(), Nbt::String("x".into()));
+        let classic = c(vec![("Name", Nbt::String("minecraft:oak_log".into())), ("Properties", Nbt::Compound(p.clone()))]);
+        assert_eq!(state_from_nbt(&classic), "minecraft:oak_log[axis=x]");
+        // 26.x upgraded chunks: id / properties
+        let modern = c(vec![("id", Nbt::String("minecraft:oak_log".into())), ("properties", Nbt::Compound(p))]);
+        assert_eq!(state_from_nbt(&modern), "minecraft:oak_log[axis=x]");
+        // 26.x runtime chunks: bare string, or {"": string} inside mixed lists
+        assert_eq!(state_from_nbt(&Nbt::String("minecraft:stone".into())), "minecraft:stone");
+        assert_eq!(state_from_nbt(&c(vec![("", Nbt::String("minecraft:sea_lantern".into()))])), "minecraft:sea_lantern");
     }
 
     #[test]

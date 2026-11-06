@@ -240,6 +240,7 @@ fn floating_island(a: &Value, rng: &mut Rng, s: f64, seed: u32) -> Result<Shape>
     let soil = pat(a, "soil", "dirt")?;
     let rock = pat(a, "rock", "60%stone,20%andesite,20%tuff")?;
     let hang = pat(a, "hang", "hanging_roots")?;
+    let hang_chains = !spec::s(a, "hang").unwrap_or("hanging_roots").contains("hanging_roots");
     let falls = spec::i(a, "waterfalls", 1) as i32;
     let fall_len = f(a, "fall", 60.0, 1.0) as i32;
     let fluid = blocks::id(spec::s(a, "fluid").unwrap_or("water"));
@@ -270,7 +271,8 @@ fn floating_island(a: &Value, rng: &mut Rng, s: f64, seed: u32) -> Result<Shape>
                 }
             }
             if u > 0.2 && rng.chance(0.03) {
-                let l = rng.range(1, 4);
+                // hanging roots can't hang from each other in vanilla: one block only
+                let l = if hang_chains { rng.range(1, 4) } else { 1 };
                 for k in 1..=l {
                     sh.soft(dx, y_bot - k, dz, &hang);
                 }
@@ -362,14 +364,32 @@ fn spire(a: &Value, rng: &mut Rng, s: f64, seed: u32) -> Result<Shape> {
             }
         }
     }
-    // hanging vines from the top rim
+    // hanging vines from the top rim. Vanilla vines must name the face they
+    // cling to; the first one clings to the pillar wall and the rest hang from
+    // the vine above (same face), which keeps them alive in-game.
+    let plain_vine = spec::s(a, "hang").map(|s| s == "vine" || s == "minecraft:vine").unwrap_or(true);
     for &(x, y, z) in rim.iter() {
         if rng.chance(0.3) {
             let l = rng.range(3, (h * 0.25) as i32 + 4);
             let out = norm([x as f64, 0.0, z as f64]);
-            let (vx, vz) = ((x as f64 + out[0]).round() as i32, (z as f64 + out[2]).round() as i32);
+            // step outward along the dominant axis so exactly one face touches the wall
+            let (fx, fz, face) = if out[0].abs() >= out[2].abs() {
+                if out[0] > 0.0 { (1, 0, "west") } else { (-1, 0, "east") }
+            } else if out[2] > 0.0 {
+                (0, 1, "north")
+            } else {
+                (0, -1, "south")
+            };
+            let (vx, vz) = (x + fx, z + fz);
+            if sh.b.contains_key(&(vx, y - 1, vz)) || !sh.b.contains_key(&(x, y - 1, z)) {
+                continue; // no free spot or nothing to cling to
+            }
+            let p = if plain_vine { Pattern::parse(&format!("vine[{face}=true]"))? } else { vines.clone() };
             for k in 1..=l {
-                sh.soft(vx, y - k, vz, &vines);
+                if sh.b.contains_key(&(vx, y - k, vz)) {
+                    break;
+                }
+                sh.soft(vx, y - k, vz, &p);
             }
         }
     }
@@ -477,8 +497,10 @@ fn tree_style(name: &str) -> TreeStyle {
         "dead" | "twisted" => TreeStyle { log: "dark_oak_wood", leaves: "", glow: "", hang: "", twist: 0.7, leafy: false },
         "blood" => TreeStyle { log: "crimson_hyphae", leaves: "", glow: "", hang: "weeping_vines", twist: 0.75, leafy: false },
         "swamp" => TreeStyle { log: "dark_oak_wood", leaves: "", glow: "", hang: "pale_hanging_moss", twist: 0.55, leafy: false },
-        "glow" => TreeStyle { log: "warped_hyphae", leaves: "60%warped_wart_block,40%cyan_stained_glass", glow: "shroomlight", hang: "cave_vines[berries=true]", twist: 0.35, leafy: true },
-        _ => TreeStyle { log: "dark_oak_wood", leaves: "oak_leaves[persistent=true]", glow: "", hang: "vine", twist: 0.25, leafy: true },
+        "glow" => TreeStyle { log: "warped_hyphae", leaves: "60%warped_wart_block,40%cyan_stained_glass", glow: "shroomlight", hang: "pale_hanging_moss", twist: 0.35, leafy: true },
+        // Strands under a canopy hang from leaves: in vanilla only hanging moss
+        // survives under leaves (vines/cave vines need a sturdy face above).
+        _ => TreeStyle { log: "dark_oak_wood", leaves: "oak_leaves[persistent=true]", glow: "", hang: "pale_hanging_moss", twist: 0.25, leafy: true },
     }
 }
 
