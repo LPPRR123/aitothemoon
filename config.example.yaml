@@ -1,0 +1,58 @@
+# 复制成 config.yaml 再修改：  cp config.example.yaml config.yaml
+# 密码和 API Key 不写在这里，写在 .env 里。
+
+server:
+  host: 127.0.0.1        # 服务器地址
+  port: 25565
+  version: "1.20.4"      # 必须和服务器版本一致
+
+bot:
+  username: AIBot        # 机器人的游戏名（离线服可以随便起）
+  auth: offline          # 离线服 + AuthMe 用 offline；正版服用 microsoft
+  aliases: [小助手]      # 在公屏叫它时也可以用这些名字
+
+owner:
+  names: [你的游戏名]    # 主人。只有这些人的话会被当成指令
+
+authme:
+  enabled: true          # 自动 /register、/login（密码在 .env 的 MC_PASSWORD）
+  autoRegister: true
+  maxAttempts: 3
+
+reconnect:
+  enabled: true
+  initialDelayMs: 5000
+  maxDelayMs: 120000
+
+chat:
+  minIntervalMs: 1500    # 两句话之间至少隔多久，防止刷屏被踢
+  maxPerMinute: 20
+  maxLength: 200
+  # 如果服务器装了聊天插件、改了聊天格式，机器人可能听不到你说话。
+  # 这时在这里加一条正则，必须有 user 和 msg 两个命名分组。例如格式是 "[VIP] Steve » 你好"：
+  # patterns:
+  #   - '^\[[^\]]+\] (?<user>\w+) » (?<msg>.+)$'
+  patterns: []
+  whisperPatterns: []
+
+commands:
+  # AI 可以自己执行的指令（只写指令名，不带 /）。
+  allow: [spawn, home, sethome, back, menu, warp, tpa, tpaccept, list, help, msg, r]
+  # AI 永远不能执行的指令（另外还有一份内置的危险指令黑名单，比如 op、pay、gamemode）。
+  deny: []
+  # 不在 allow 里的指令：只有你在聊天里亲口打出这条指令时（如"帮我 /shop"），AI 才会执行。
+
+movement:
+  allowDig: false        # 走路时能不能挖开挡路的方块（默认不挖，防止破坏建筑）
+  allowPlace: false      # 走路时能不能垫方块
+
+llm:
+  model: claude-opus-5-5
+  effort: low            # low 反应最快；复杂任务可以改成 medium / high
+  maxTokens: 16000
+  maxTurnsPerTask: 25    # 一个指令最多让 AI 思考多少轮
+
+agent:
+  publicTrigger: mention # 公屏里：mention = 叫了机器人名字才回应；all = 你说的每句话都回应
+  stopWords: [停, 停下, 别动, stop]
+  recentChatLines: 12

@@ -1,0 +1,15 @@
+name: TestMenus
+version: 1.0.0
+main: dev.aitothemoon.testmenus.TestMenus
+api-version: '1.20'
+description: Simulates server GUI menus and NPC menus for bot testing
+commands:
+  menu:
+    description: Open the test server menu
+  spawnnpc:
+    description: Spawn a test NPC that opens the menu on right-click
+    usage: /spawnnpc <name>
+    permission: testmenus.admin
+permissions:
+  testmenus.admin:
+    default: op
