@@ -20,12 +20,15 @@ export interface ActionContext {
 
 export type RiskLevel = "low" | "medium" | "high";
 
+/** What an action returns: text for the model, plus optional facts for learning (e.g. what was clicked). */
+export type ActionOutput = string | { text: string; meta?: Record<string, unknown> };
+
 export interface Action<S extends z.ZodObject = z.ZodObject> {
   name: string;
   description: string;
   risk: RiskLevel;
   schema: S;
-  run(ctx: ActionContext, input: z.infer<S>): Promise<string>;
+  run(ctx: ActionContext, input: z.infer<S>): Promise<ActionOutput>;
 }
 
 /** Helper that keeps the input type tied to the schema. */

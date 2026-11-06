@@ -2,7 +2,7 @@ import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
 import pathfinderPkg from "mineflayer-pathfinder";
 import { z } from "zod";
-import { describeWindow, entityLabel } from "../bot/perception.js";
+import { describeItem, describeWindow, entityLabel } from "../bot/perception.js";
 import { normalizeName } from "../bot/text.js";
 import { checkCommand } from "../safety/commands.js";
 import { travelMovements } from "./movement.js";
@@ -66,22 +66,41 @@ export const readWindow = defineAction({
 export const clickSlot = defineAction({
   name: "click_slot",
   description:
-    "点击当前打开窗口里的某个格子（服务器菜单的按钮就是格子里的物品）。返回点击后的窗口内容和服务器消息。多层菜单需要一层层点。",
+    "点击当前打开窗口里的某个格子（服务器菜单的按钮就是格子里的物品）。用 slot 指定格子编号，或者用 name 指定按钮上的文字（部分匹配）。返回点击后的窗口内容和服务器消息。多层菜单需要一层层点。",
   risk: "medium",
   schema: z.object({
-    slot: z.number().int().min(0),
+    slot: z.number().int().min(0).optional(),
+    name: z.string().optional().describe("按钮（格子里物品）显示的文字，例如 商店"),
     button: z.enum(["left", "right"]).default("left"),
     shift: z.boolean().default(false).describe("是否按住 Shift 点击（快速转移物品）"),
   }),
-  async run(ctx, { slot, button, shift }) {
+  async run(ctx, { slot, name, button, shift }) {
     const { bot } = ctx;
     const win = bot.currentWindow;
     if (!win) throw new ActionError("当前没有打开的窗口，先打开菜单");
-    if (slot >= win.slots.length) throw new ActionError(`格子 ${slot} 超出范围（0-${win.slots.length - 1}）`);
+    let target = slot;
+    if (target === undefined) {
+      if (!name) throw new ActionError("需要 slot 或 name 其中一个");
+      const want = normalizeName(name);
+      for (let i = 0; i < win.inventoryStart; i++) {
+        const item = win.slots[i];
+        if (item && normalizeName(describeItem(bot, item).name).includes(want)) {
+          target = i;
+          break;
+        }
+      }
+      if (target === undefined) throw new ActionError(`菜单里没有找到"${name}"这个按钮`);
+    }
+    if (target >= win.slots.length) throw new ActionError(`格子 ${target} 超出范围（0-${win.slots.length - 1}）`);
+    const clicked = win.slots[target];
+    const clickedName = clicked ? describeItem(bot, clicked).name : "";
     const listen = captureMessages(bot, 1_200);
-    await bot.clickWindow(slot, button === "left" ? 0 : 1, shift ? 1 : 0);
+    await bot.clickWindow(target, button === "left" ? 0 : 1, shift ? 1 : 0);
     const messages = await listen;
-    return windowOrMessages(bot, messages);
+    return {
+      text: `点击了格子${target}${clickedName ? `「${clickedName}」` : "（空格子）"}\n${windowOrMessages(bot, messages)}`,
+      meta: { clickedName },
+    };
   },
 });
 

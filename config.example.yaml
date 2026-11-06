@@ -56,3 +56,10 @@ agent:
   publicTrigger: mention # 公屏里：mention = 叫了机器人名字才回应；all = 你说的每句话都回应
   stopWords: [停, 停下, 别动, stop]
   recentChatLines: 12
+
+strategy:
+  # 混合式 AI：常见指令用学会的策略直接做（不调用 AI），新情况才问 Claude。
+  enabled: true
+  learn: true            # Claude 成功做完一件新事后，自动整理成策略、审核、存起来
+  file: data/strategies.json   # 策略库文件，可以直接打开看
+  promoteAfter: 2        # 新策略成功几次后转正

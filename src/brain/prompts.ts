@@ -37,6 +37,8 @@ export interface TaskPromptInput {
   whisper: boolean;
   recentChat: string;
   observation: string;
+  /** Extra context, e.g. that a learned strategy was tried and failed. */
+  note?: string;
 }
 
 /** First user message of a task. Volatile content lives here, after the cached prefix. */
@@ -49,7 +51,7 @@ ${input.recentChat || "（没有最近的聊天）"}
 <status>
 ${input.observation}
 </status>
-
+${input.note ? `\n<note>${input.note}</note>\n` : ""}
 主人 ${input.owner}${input.whisper ? "（私聊）" : ""}对你说：${input.message}`;
 }
 

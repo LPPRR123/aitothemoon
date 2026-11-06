@@ -7,6 +7,9 @@ import type { Config } from "../config.js";
 import { createLogger } from "../logger.js";
 import { describeApiError, type LlmClient, type MessageParam, type Tool, type ToolResultBlock, type ToolUseBlock } from "./llm.js";
 import { buildInterjection, buildSystemPrompt, buildTaskPrompt } from "./prompts.js";
+import { compileStrategy, READ_ONLY_TOOLS, reviewStrategy, type TraceEntry } from "../strategy/compiler.js";
+import type { StrategyLibrary, StrategyMatch } from "../strategy/library.js";
+import { fillReply, instantiate } from "../strategy/matcher.js";
 
 const log = createLogger("agent");
 
@@ -21,6 +24,10 @@ interface Task {
   pending: string[];
   /** Everything the owner said during this task. */
   ownerMessages: string[];
+  /** Tool calls the model made, for learning a strategy afterwards. */
+  trace: TraceEntry[];
+  /** The owner changed the request midway; such a task is not learned. */
+  interrupted: boolean;
 }
 
 export function isOwner(config: Config, username: string): boolean {
@@ -85,11 +92,14 @@ export class Agent {
   private task: Task | null = null;
   private readonly tools: Tool[];
   private readonly system: string;
+  /** Last learned strategy that ran, so "不对" right after it can switch it off. */
+  private lastStrategyRun: { id: number; at: number } | null = null;
 
   constructor(
     private readonly manager: BotManager,
     private readonly config: Config,
     private readonly llm: LlmClient,
+    private readonly strategies: StrategyLibrary | null = null,
   ) {
     this.system = buildSystemPrompt(config);
     this.tools = ACTIONS.map((a) => ({
@@ -135,6 +145,8 @@ export class Agent {
       return;
     }
 
+    if (this.handleOwnerCommand(m.username, m.whisper, text)) return;
+
     if (this.task) {
       // Deliver it to the running task and interrupt the current action so the model can react.
       this.task.pending.push(text);
@@ -153,12 +165,13 @@ export class Agent {
       toolAbort: null,
       pending: [],
       ownerMessages: [message],
+      trace: [],
+      interrupted: false,
     };
     this.task = task;
     log.info(`新任务（${owner}）：${message}`);
     try {
-      const final = await this.loop(task, message);
-      if (final && !task.abort.signal.aborted) this.reply(owner, whisper, final);
+      await this.handle(task, message);
     } catch (err) {
       if (!task.abort.signal.aborted) {
         log.error("任务出错", err);
@@ -167,13 +180,138 @@ export class Agent {
     } finally {
       this.task = null;
     }
-    // Messages that arrived after the model's last turn start a new task.
+    // Messages that arrived after the last step start a new task.
     if (task.pending.length && !task.abort.signal.aborted) {
       void this.runTask(owner, whisper, task.pending.join(" "));
     }
   }
 
-  private async loop(task: Task, message: string): Promise<string> {
+  /**
+   * The hybrid decision: a learned strategy first (no model call); the model only for new
+   * situations, or when a learned strategy fails; then learn from what the model did.
+   */
+  private async handle(task: Task, message: string): Promise<void> {
+    let note: string | undefined;
+    const hit = this.strategies?.match(message) ?? null;
+    if (hit) {
+      const outcome = await this.runStrategy(task, hit);
+      if (outcome.ok) {
+        this.reply(task.owner, task.whisper, outcome.reply);
+        return;
+      }
+      if (task.abort.signal.aborted || outcome.interrupted) return;
+      note = `我先按以前学会的做法「${hit.strategy.name}」去做，但第 ${outcome.step} 步 ${outcome.tool} 失败了：${outcome.error}。这次情况不一样，请你接手，完成主人的要求。`;
+    }
+
+    this.strategies?.recordLlmTask();
+    const final = await this.loop(task, message, note);
+    if (!final || task.abort.signal.aborted) return;
+    this.reply(task.owner, task.whisper, final);
+    if (!task.interrupted) void this.learn(task, message, final);
+  }
+
+  private async runStrategy(
+    task: Task,
+    hit: StrategyMatch,
+  ): Promise<{ ok: true; reply: string } | { ok: false; interrupted: boolean; step: number; tool: string; error: string }> {
+    const { strategy, values } = hit;
+    log.info(`使用学过的策略 #${strategy.id}「${strategy.name}」（不调用 AI）`);
+    let last = "";
+    for (let i = 0; i < strategy.steps.length; i++) {
+      const step = strategy.steps[i]!;
+      const input = instantiate(step.input, values, task.owner);
+      const r = await this.executeStep(task, step.tool, input, false);
+      if (task.abort.signal.aborted || r.interrupted) {
+        return { ok: false, interrupted: true, step: i + 1, tool: step.tool, error: "被打断" };
+      }
+      if (!r.ok) {
+        this.strategies!.recordResult(strategy.id, false);
+        return { ok: false, interrupted: false, step: i + 1, tool: step.tool, error: r.text.split("\n")[0] ?? "" };
+      }
+      last = r.text;
+    }
+    this.strategies!.recordResult(strategy.id, true);
+    this.lastStrategyRun = { id: strategy.id, at: Date.now() };
+    const result = (last.split("\n")[0] ?? "").slice(0, 80);
+    return { ok: true, reply: fillReply(strategy.reply, values, task.owner, result) };
+  }
+
+  /** After the model solved something new: compile it into a strategy, review it, save it. */
+  private async learn(task: Task, instruction: string, reply: string): Promise<void> {
+    if (!this.strategies || !this.config.strategy.learn) return;
+    if (!task.trace.some((t) => t.ok && !READ_ONLY_TOOLS.has(t.tool))) return;
+    try {
+      const compiled = await compileStrategy(
+        this.llm,
+        this.config,
+        { instruction, trace: task.trace, reply },
+        AbortSignal.timeout(120_000),
+      );
+      if (!compiled) return;
+      const review = reviewStrategy(compiled, { instruction, owner: task.owner, trace: task.trace }, this.config);
+      if (!review.ok) {
+        log.info(`这次没有学成策略：${review.reason}`);
+        return;
+      }
+      const { strategy, merged } = this.strategies.add(review.candidate);
+      log.info(`${merged ? "并入" : "学会"}策略 #${strategy.id}「${strategy.name}」（${strategy.status}）`);
+      if (merged) return;
+      if (strategy.status === "pending") {
+        this.reply(task.owner, task.whisper, `我学会了「${strategy.name}」，但它有需要你确认的操作，说"批准 ${strategy.id}"后我才会自动用`);
+      } else {
+        this.reply(task.owner, task.whisper, `记住了「${strategy.name}」的做法，下次不用再想`);
+      }
+    } catch (err) {
+      log.warn("学习策略失败", err);
+    }
+  }
+
+  /** Strategy management in chat. Deterministic, no model call. Returns true if handled. */
+  private handleOwnerCommand(owner: string, whisper: boolean, text: string): boolean {
+    const lib = this.strategies;
+    if (!lib) return false;
+    const t = text.trim();
+    const say = (msg: string) => this.reply(owner, whisper, msg);
+
+    if (/^(你)?(都)?学会了(什么|哪些|啥)$|^策略(列表)?$/.test(t)) {
+      const list = lib.all.filter((s) => s.status !== "disabled");
+      if (!list.length) return say("我还没学会固定的做法"), true;
+      const label: Record<string, string> = { active: "", probation: "，试用中", pending: "，等你批准" };
+      const items = list.slice(0, 8).map((s) => `#${s.id} ${s.name}（用过${s.stats.uses}次${label[s.status] ?? ""}）`);
+      say(`我学会了 ${list.length} 个做法：${items.join(" ")}`);
+      return true;
+    }
+    let m = /^(忘掉|忘记|删掉)(策略)?\s*#?(\d+)$/.exec(t);
+    if (m) {
+      const id = Number(m[3]);
+      say(lib.disable(id, "主人要求忘掉") ? `好的，忘掉了 #${id}` : `没有可用的 #${id}`);
+      return true;
+    }
+    m = /^批准(策略)?\s*#?(\d+)$/.exec(t);
+    if (m) {
+      const id = Number(m[2]);
+      say(lib.approve(id) ? `好的，#${id} 以后可以自动用了` : `#${id} 不需要批准或者不存在`);
+      return true;
+    }
+    if (/^(不对|错了|做错了|不是这样)$/.test(t) && this.lastStrategyRun && Date.now() - this.lastStrategyRun.at < 120_000) {
+      const s = lib.get(this.lastStrategyRun.id);
+      lib.disable(this.lastStrategyRun.id, "主人说做错了");
+      this.lastStrategyRun = null;
+      say(`好的，我把「${s?.name ?? "刚才"}」这个做法忘掉了，下次重新想`);
+      return true;
+    }
+    if (/^(学习)?统计$/.test(t)) {
+      const x = lib.totals;
+      const direct = x.strategyRuns - x.strategyFailures;
+      const total = direct + x.llmTasks;
+      const pct = total ? Math.round((direct / total) * 100) : 0;
+      say(`学会 ${lib.usable().length} 个做法；直接按学过的做法完成 ${direct} 次，调用 AI ${x.llmTasks} 次（不用 AI 的比例 ${pct}%）`);
+      return true;
+    }
+    return false;
+  }
+
+  private async loop(task: Task, message: string, note?: string): Promise<string> {
     const bot = this.manager.bot;
     if (!bot) return "我还没连上服务器";
     const recent = this.manager.chat.history.slice(-this.config.agent.recentChatLines);
@@ -186,6 +324,7 @@ export class Agent {
           whisper: task.whisper,
           recentChat: formatChatLines(recent, this.config),
           observation: observe(bot),
+          note,
         }),
       },
     ];
@@ -221,25 +360,32 @@ export class Agent {
 
       const results: ToolResultBlock[] = [];
       for (const use of toolUses) {
-        results.push(await this.execute(task, use));
+        const r = await this.executeStep(task, use.name, use.input, true);
+        results.push({ type: "tool_result", tool_use_id: use.id, content: r.text, is_error: !r.ok });
       }
       const content: Array<ToolResultBlock | { type: "text"; text: string }> = [...results];
-      if (task.pending.length) content.push({ type: "text", text: buildInterjection(task.owner, task.pending.splice(0)) });
+      if (task.pending.length) {
+        task.interrupted = true;
+        content.push({ type: "text", text: buildInterjection(task.owner, task.pending.splice(0)) });
+      }
       messages.push({ role: "user", content });
     }
     return "这件事步骤太多了，我先停下，你可以换个说法再告诉我";
   }
 
-  private async execute(task: Task, use: ToolUseBlock): Promise<ToolResultBlock> {
+  /** Run one tool for the current task. `record` adds it to the trace the strategy learner reads. */
+  private async executeStep(
+    task: Task,
+    tool: string,
+    input: unknown,
+    record: boolean,
+  ): Promise<{ ok: boolean; text: string; interrupted: boolean }> {
     const bot = this.manager.bot;
-    if (task.abort.signal.aborted || !bot) {
-      return { type: "tool_result", tool_use_id: use.id, content: "任务已取消，没有执行", is_error: true };
-    }
-    // A message that arrived before this tool started is handled after it, not by aborting it.
+    if (task.abort.signal.aborted || !bot) return { ok: false, text: "任务已取消，没有执行", interrupted: true };
     const toolAbort = new AbortController();
     task.toolAbort = toolAbort;
     const signal = AbortSignal.any([task.abort.signal, toolAbort.signal]);
-    log.info(`调用 ${use.name} ${JSON.stringify(use.input)}`);
+    log.info(`调用 ${tool} ${JSON.stringify(input)}`);
     const result = await runAction(
       {
         bot,
@@ -251,16 +397,21 @@ export class Agent {
         ownerMessages: task.ownerMessages,
         log,
       },
-      use.name,
-      use.input,
+      tool,
+      input,
     );
     task.toolAbort = null;
+    const interrupted = toolAbort.signal.aborted && !task.abort.signal.aborted;
     let text = result.text;
-    if (toolAbort.signal.aborted && !task.abort.signal.aborted) {
+    if (interrupted) {
       stopEverything(bot);
+      task.interrupted = true;
       text = `这个动作被主人的新消息打断了（${result.text}）`;
     }
-    log.info(`结果 ${use.name}：${text.split("\n")[0]}`);
-    return { type: "tool_result", tool_use_id: use.id, content: text, is_error: !result.ok };
+    if (record) {
+      task.trace.push({ tool, input: (input ?? {}) as Record<string, unknown>, ok: result.ok && !interrupted, text, meta: result.meta });
+    }
+    log.info(`结果 ${tool}：${text.split("\n")[0]}`);
+    return { ok: result.ok && !interrupted, text, interrupted };
   }
 }

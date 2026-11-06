@@ -84,6 +84,16 @@ const AgentSchema = z.object({
   recentChatLines: z.number().int().default(12),
 });
 
+const StrategyConfigSchema = z.object({
+  /** Answer common instructions from learned strategies without calling the model. */
+  enabled: z.boolean().default(true),
+  /** Learn new strategies from tasks the model solved. */
+  learn: z.boolean().default(true),
+  file: z.string().default("data/strategies.json"),
+  /** Successful uses before a new strategy counts as trusted. */
+  promoteAfter: z.number().int().min(1).default(2),
+});
+
 export const ConfigSchema = z.object({
   server: ServerSchema.prefault({}),
   bot: BotSchema.prefault({}),
@@ -95,6 +105,7 @@ export const ConfigSchema = z.object({
   movement: MovementSchema.prefault({}),
   llm: LlmSchema.prefault({}),
   agent: AgentSchema.prefault({}),
+  strategy: StrategyConfigSchema.prefault({}),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

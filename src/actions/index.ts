@@ -30,6 +30,7 @@ export function toolInputSchema(action: Action): { type: "object"; [k: string]: 
 export interface ActionResult {
   ok: boolean;
   text: string;
+  meta?: Record<string, unknown>;
 }
 
 /** Validate input and run an action. Never throws: failures come back as text for the model. */
@@ -39,8 +40,8 @@ export async function runAction(ctx: ActionContext, name: string, input: unknown
   const parsed = action.schema.safeParse(input ?? {});
   if (!parsed.success) return { ok: false, text: `参数错误：${z.prettifyError(parsed.error)}` };
   try {
-    const text = await action.run(ctx, parsed.data);
-    return { ok: true, text };
+    const out = await action.run(ctx, parsed.data);
+    return typeof out === "string" ? { ok: true, text: out } : { ok: true, text: out.text, meta: out.meta };
   } catch (err) {
     if (err instanceof ActionError) return { ok: false, text: err.message };
     ctx.log.error(`工具 ${name} 出错`, err);

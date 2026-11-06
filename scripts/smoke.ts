@@ -15,6 +15,7 @@ import { BotManager } from "../src/bot/BotManager.js";
 import { attachReflexes } from "../src/bot/reflexes.js";
 import { Agent } from "../src/brain/agent.js";
 import { parseConfig } from "../src/config.js";
+import { StrategyLibrary } from "../src/strategy/library.js";
 import { ScriptedLlm } from "./scripted-llm.js";
 
 const HOST = process.env.MC_HOST ?? "127.0.0.1";
@@ -54,6 +55,31 @@ const llm = new ScriptedLlm({
   偷偷执行指令: [{ name: "run_command", input: { command: "/warp secret" } }],
   跟着我: [{ name: "follow_player", input: { player: "Owner" } }],
   砍很多木头: [{ name: "collect_block", input: { block: "oak_log", count: 30 } }],
+  砍两个木头: [], // only reached when the learned strategy fails: the model just answers
+}, {
+  // What the model returns when asked to turn a solved task into a reusable strategy.
+  砍三个木头: {
+    reusable: true, reason: "", name: "砍原木",
+    triggers: ["砍{count}个{block}", "去砍{count}个{block}", "挖{count}个{block}"],
+    params: [
+      { name: "count", type: "number", values: [] },
+      { name: "block", type: "word", values: [{ word: "木头", value: "oak_log" }, { word: "原木", value: "oak_log" }, { word: "橡木", value: "oak_log" }] },
+    ],
+    steps: [{ tool: "collect_block", input_json: '{"block":"{block}","count":"{count}"}' }],
+    reply: "砍好了{count}个{block}",
+  },
+  打开菜单买面包: {
+    reusable: true, reason: "", name: "菜单买面包",
+    triggers: ["打开菜单买面包", "去菜单买面包", "买面包"],
+    params: [],
+    steps: [
+      { tool: "run_command", input_json: '{"command":"/menu"}' },
+      { tool: "click_slot", input_json: '{"name":"商店"}' },
+      { tool: "click_slot", input_json: '{"name":"面包"}' },
+      { tool: "close_window", input_json: "{}" },
+    ],
+    reply: "面包买好了",
+  },
 });
 
 function connectOwner(): Promise<Bot> {
@@ -110,7 +136,8 @@ async function main() {
   await op(`/spawnnpc 菜单NPC`);
 
   const manager = new BotManager(config, { mcPassword: "AiPass123" });
-  const agent = new Agent(manager, config, llm);
+  const library = new StrategyLibrary(null, { promoteAfter: 2 });
+  const agent = new Agent(manager, config, llm, library);
   agent.attach();
   const ready = new Promise<Bot>((r) => manager.once("ready", r));
   manager.start();
@@ -152,6 +179,21 @@ async function main() {
   r = await say("小助手 砍三个木头", 90_000);
   check("挖原木 collect_block", count("oak_log") >= 3, `oak_log=${count("oak_log")}，回复：${r}`);
 
+  const waitLearned = async (n: number) => {
+    const end = Date.now() + 10_000;
+    while (Date.now() < end && library.all.length < n) await sleep(200);
+    await sleep(2500); // let the "记住了…" reply arrive before the next instruction
+    return library.all.length >= n;
+  };
+  const learnedLogs = await waitLearned(1);
+  check("AI 完成新任务后学成策略", learnedLogs && library.all[0]?.name === "砍原木", library.all.map((x) => x.name).join(",") || "没有学到");
+
+  // 4b. Same kind of request, new words and number: answered from the strategy, no model call
+  let requests = llm.taskRequests;
+  const logsBefore = count("oak_log");
+  r = await say("AIBot 帮我挖两个原木", 60_000);
+  check("类似指令直接用策略，不调用 AI", llm.taskRequests === requests && count("oak_log") >= logsBefore + 2, `AI 请求 ${llm.taskRequests - requests} 次，oak_log +${count("oak_log") - logsBefore}，回复：${r}`);
+
   // 5. Craft chain incl. placing a crafting table
   r = await say("AIBot 做个工作台", 60_000);
   check("合成（含放工作台）craft", count("wooden_pickaxe") >= 1, `wooden_pickaxe=${count("wooden_pickaxe")} planks=${count("oak_planks")}，回复：${r}`);
@@ -160,6 +202,16 @@ async function main() {
   const breadBefore = count("bread");
   r = await say("AIBot 打开菜单买面包", 30_000);
   check("指令打开菜单并点两层 run_command+click_slot", count("bread") >= breadBefore + 5 && !ai.currentWindow, `bread=${count("bread")}，回复：${r}`);
+
+  const learnedMenu = await waitLearned(2);
+  requests = llm.taskRequests;
+  const bread2 = count("bread");
+  r = await say("AIBot 去菜单买面包", 30_000);
+  check("学会的菜单策略（按按钮文字点击）", learnedMenu && llm.taskRequests === requests && count("bread") >= bread2 + 5, `AI 请求 ${llm.taskRequests - requests} 次，bread=${count("bread")}，回复：${r}`);
+  r = await say("AIBot 不对", 8_000);
+  check("说\"不对\"会忘掉刚用的策略", /忘掉/.test(r) && library.all.find((x) => x.name === "菜单买面包")?.status === "disabled", r);
+  r = await say("AIBot 学会了什么", 8_000);
+  check("查看学会的策略", /砍原木/.test(r) && !/菜单买面包/.test(r), r);
 
   // 7. Menu opened by right-clicking an NPC
   const before7 = serverMsgs.length;
@@ -189,6 +241,15 @@ async function main() {
   const busyBefore = agent.busy;
   r = await say("AIBot 算了先别砍了", 30_000);
   check("做事途中被新消息打断", busyBefore && /按你新说的来/.test(r), `之前忙=${busyBefore}，回复：${r}`);
+
+  // 10b. A learned strategy fails (no trees left) -> falls back to the model with a note
+  await op(`/tp AIBot ${o.x + 600} ${o.y} ${o.z + 600}`); // fresh flat land: no trees within 64 blocks
+  await sleep(3000);
+  requests = llm.taskRequests;
+  r = await say("AIBot 砍两个木头", 60_000);
+  check("策略失败时交给 AI 接手", llm.taskRequests > requests && llm.lastTaskHadNote, `AI 请求 ${llm.taskRequests - requests} 次，带失败说明=${llm.lastTaskHadNote}，回复：${r}`);
+  r = await say("AIBot 统计", 8_000);
+  check("学习统计", /直接按学过的做法完成 [1-9]/.test(r), r);
 
   // 11. Reconnect after being kicked
   await op(`/kick AIBot 测试重连`);

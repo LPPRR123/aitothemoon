@@ -1,4 +1,5 @@
 import type { LlmClient, Message, MessageParams } from "../src/brain/llm.js";
+import type { CompiledStrategy } from "../src/strategy/compiler.js";
 
 export interface Step {
   name: string;
@@ -12,12 +13,24 @@ export interface Step {
  */
 export class ScriptedLlm implements LlmClient {
   readonly calls: string[] = [];
-  constructor(private readonly scripts: Record<string, Step[]>) {}
+  /** Model requests made for tasks (not counting strategy compilation). */
+  taskRequests = 0;
+  readonly compiled: string[] = [];
+  /** Whether the last task prompt carried a note (a learned strategy failed first). */
+  lastTaskHadNote = false;
+
+  constructor(
+    private readonly scripts: Record<string, Step[]>,
+    private readonly compiles: Record<string, CompiledStrategy> = {},
+  ) {}
 
   async create(params: MessageParams, signal: AbortSignal): Promise<Message> {
     if (signal.aborted) throw new Error("aborted");
     const first = params.messages[0];
     const firstText = typeof first?.content === "string" ? first.content : "";
+    if (params.output_config?.format) return this.compile(params, firstText);
+    this.taskRequests++;
+    if (params.messages.length === 1) this.lastTaskHadNote = firstText.includes("<note>");
     const instruction = firstText.split("对你说：").pop()?.trim() ?? "";
     const steps = this.scripts[instruction] ?? [];
     const done = params.messages.filter((m) => m.role === "assistant").length;
@@ -47,5 +60,19 @@ export class ScriptedLlm implements LlmClient {
     }
     const summary = interrupted ? "收到，按你新说的来" : `完成：${resultText.replace(/\s*\n\s*/g, " ").slice(0, 150)}`;
     return { ...base, content: [{ type: "text", text: summary }], stop_reason: "end_turn" } as unknown as Message;
+  }
+
+  private compile(params: MessageParams, prompt: string): Message {
+    const instruction = /主人的原话：(.+)/.exec(prompt)?.[1]?.trim() ?? "";
+    this.compiled.push(instruction);
+    const result: CompiledStrategy = this.compiles[instruction] ?? {
+      reusable: false, reason: "剧本里没有", name: "", triggers: [], params: [], steps: [], reply: "",
+    };
+    return {
+      id: `msg_${Date.now()}`, type: "message", role: "assistant", model: params.model, stop_sequence: null,
+      usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      content: [{ type: "text", text: JSON.stringify(result) }],
+      stop_reason: "end_turn",
+    } as unknown as Message;
   }
 }

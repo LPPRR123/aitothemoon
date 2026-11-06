@@ -5,6 +5,7 @@ import { Agent } from "./brain/agent.js";
 import { ClaudeClient } from "./brain/llm.js";
 import { loadConfig, loadSecrets } from "./config.js";
 import { createLogger } from "./logger.js";
+import { StrategyLibrary } from "./strategy/library.js";
 
 const log = createLogger("main");
 
@@ -16,7 +17,10 @@ function main(): void {
   }
 
   const manager = new BotManager(config, secrets);
-  const agent = new Agent(manager, config, new ClaudeClient());
+  const strategies = config.strategy.enabled
+    ? new StrategyLibrary(config.strategy.file, { promoteAfter: config.strategy.promoteAfter })
+    : null;
+  const agent = new Agent(manager, config, new ClaudeClient(), strategies);
   agent.attach();
 
   manager.on("ready", (bot) => {
