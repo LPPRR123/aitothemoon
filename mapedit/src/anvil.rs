@@ -305,13 +305,17 @@ pub fn write_level_dat(save: &Path, o: &ExportOpts, custom_dims: &[String]) -> R
         ("WasModded", Nbt::Byte(0)),
         ("raining", Nbt::Byte(0)),
         ("thundering", Nbt::Byte(0)),
-        ("clearWeatherTime", Nbt::Int(0)),
+        // keep the sky clear for a long time; frozen-time maps never rain
+        ("clearWeatherTime", Nbt::Int(if o.daylight_cycle { 24000 * 5 } else { 0 })),
+        ("rainTime", Nbt::Int(24000 * 5)),
+        ("thunderTime", Nbt::Int(24000 * 5)),
         ("DataPacks", c(vec![("Enabled", Nbt::List(packs)), ("Disabled", Nbt::List(vec![]))])),
         ("DragonFight", c(vec![("NeedsStateScanning", Nbt::Byte(1)), ("DragonKilled", Nbt::Byte(0)), ("PreviouslyKilled", Nbt::Byte(0))])),
         (
             "GameRules",
             c(vec![
                 ("doDaylightCycle", Nbt::String(if o.daylight_cycle { "true" } else { "false" }.into())),
+                ("doWeatherCycle", Nbt::String(if o.daylight_cycle { "true" } else { "false" }.into())),
                 ("doMobSpawning", Nbt::String("true".into())),
                 ("doFireTick", Nbt::String("false".into())),
             ]),

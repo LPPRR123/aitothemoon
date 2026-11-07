@@ -16,4 +16,21 @@ python3 tools/mc-verify/mctest.py 26.3 $SAVE run \
 ```
 
 `mctest.py` 会打印服务端启动结果、每条命令的输出，以及日志里所有警告和错误。
+
+## 真实客户端截图（Linux，无显示器）
+
+```bash
+apt-get install -y xvfb xdotool mesa-vulkan-drivers libvulkan1 libgl1-mesa-dri
+export MC_HOME=$PWD/mc-verify-work
+python3 tools/mc-verify/getclient.py mc-verify-work/26.3.json $MC_HOME/client   # 版本 json 从 piston-meta 下载
+mkdir -p $MC_HOME/client/game/saves && cp -r exports/Scenes $MC_HOME/client/game/saves/
+Xvfb :99 -screen 0 1280x720x24 &
+tools/mc-verify/runclient.sh Scenes &                # 软件 Vulkan 渲染，进入存档约 1 分钟
+# 点掉「升级前备份」和「实验性设置」提示后，按 F1 隐藏界面：
+DISPLAY=:99 xdotool key F1
+python3 tools/mc-verify/shots.py examples/scenes shots 45   # 按每个场景的 view 机位传送并截图
+```
+
+客户端需要访问 piston-meta / piston-data.mojang.com、libraries.minecraft.net 和 resources.download.minecraft.net（会跳过音效资源）。离线运行时正版服务相关的报错可以忽略。
+`options.txt` 里建议设 `fov:-0.5`（垂直 50°，约等于 `view` 的水平 80°）和 `renderDistance:16`。
 `nbtdump.py REGION.mca CX CZ` 可以打印一个区块的 NBT 结构。
