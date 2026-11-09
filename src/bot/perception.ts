@@ -12,6 +12,13 @@ export function describeItem(bot: Bot, item: Item): { id: string; count: number;
   return { id: item.name, count: item.count, name: custom || item.displayName, lore };
 }
 
+/** Item ID -> total count in the bot's inventory. */
+export function inventoryCounts(bot: Bot): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const item of bot.inventory.items()) counts.set(item.name, (counts.get(item.name) ?? 0) + item.count);
+  return counts;
+}
+
 export function inventorySummary(bot: Bot): string {
   const counts = new Map<string, number>();
   for (const item of bot.inventory.items()) {
@@ -73,6 +80,13 @@ export function notableBlocks(bot: Bot, maxDistance = 32): string[] {
     }
   }
   return out;
+}
+
+/** Plain title of the open window, or null if no window is open. */
+export function windowTitle(bot: Bot): string | null {
+  const win = bot.currentWindow;
+  if (!win) return null;
+  return componentToText(bot, win.title) || String(win.type);
 }
 
 /** Contents of the currently open container/menu window, or null if none is open. */

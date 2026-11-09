@@ -4,7 +4,7 @@
 
 它用的是**混合式 AI**：常见的指令用学会的"策略"直接做，不调用 AI；遇到新情况才问 Claude。Claude 做成功的新事情，会被自动整理成策略、审核后存进策略库，下次同类的话直接用。**用得越久，调用 AI 越少**。
 
-**当前进度**：P0（连接 / 登录 / 重连）、P1（能听懂人话的玩家）、P2（策略库：学习 + 审核 + 复用）已完成，在本地 Paper 1.20.4 + AuthMe 测试服上 20 项端到端测试全部通过。规划见 [docs/PLAN.md](docs/PLAN.md)。
+**当前进度**：P0（连接 / 登录 / 重连）、P1（能听懂人话的玩家）、P2（策略库：学习 + 审核 + 复用）已完成，在本地 Paper 1.20.4 + AuthMe 测试服上 21 项端到端测试全部通过。规划见 [docs/PLAN.md](docs/PLAN.md)。
 
 ## 它能做什么
 
@@ -29,7 +29,8 @@
 
 - 新策略要先过审核才会入库：必须能原样重现这次成功的步骤、只用已有的工具、指令必须在允许列表里；会把物品给出去之类的高风险策略要你批准。
 - 新策略先"试用"，成功 2 次后转正；总是失败会被自动停用。
-- 策略失败时（比如附近没有树了），自动交给 Claude 接手，Claude 会知道"学过的做法失败了"。
+- 重放时会做**环境检查**（参考开源项目 muscle-mem）：学的时候记下每一步前后打开的是哪个菜单、做完背包多了什么；重放时逐步比对。比如服务器把菜单改了，它点按钮前就会发现"这不是学的时候那个菜单"，不会乱点。
+- 策略失败或环境对不上时（比如附近没有树了、菜单变了），自动交给 Claude 接手，Claude 会知道"学过的做法哪一步出了问题"。
 - 遇到没学过的词（比如"砍三个白桦木"），当作新情况交给 Claude；学会后把新词并进原来的策略，策略库越用越宽。
 - 策略库就是 `data/strategies.json`，可以直接打开看。
 
@@ -95,7 +96,7 @@ npm run test-server:setup   # 在 ./test-server 准备一个本地测试服（Pa
 npm run smoke          # 端到端测试：需要测试服在运行，且账号 Owner 是 OP
 ```
 
-测试服说明：需要 Java 17+。`npm run test-server:setup` 之后 `cd test-server && java -Xmx2G -jar paper.jar --nogui`。测试菜单插件 `TestMenus`（源码在 `tools/testmenus`）提供 `/menu` 两层箱子菜单，以及 `/spawnnpc <名字>` 生成一个右键打开菜单的 NPC。注意 AuthMe 会在玩家登录时重置 OP 状态，所以要**先登录、再在控制台 `op`**。
+测试服说明：需要 Java 17+。`npm run test-server:setup` 之后 `cd test-server && java -Xmx2G -jar paper.jar --nogui`。测试菜单插件 `TestMenus`（源码在 `tools/testmenus`）提供 `/menu` 两层箱子菜单、`/spawnnpc <名字>` 生成一个右键打开菜单的 NPC，以及 `/menutitle <标题>` 修改主菜单标题（模拟服务器改版，用来测环境检查）。注意 AuthMe 会在玩家登录时重置 OP 状态，所以要**先登录、再在控制台 `op`**。
 
 `npm run smoke` 不需要 API Key：它用一个按剧本出牌的假模型（`scripts/scripted-llm.ts`）代替 Claude，测试的是真实的聊天 → 决策循环 → 工具 → 游戏这条链路，以及"学会 → 不调用 AI 直接复用 → 失败交给 AI"这个学习闭环。
 
@@ -121,7 +122,8 @@ src/
 └─ strategy/
    ├─ matcher.ts         把主人的话和策略的触发说法对上（中文数字、近义词），不调用 AI
    ├─ library.ts         策略库：存储、试用/转正/停用、统计
-   └─ compiler.ts        把 Claude 的成功做法整理成策略 + 审核
+   ├─ compiler.ts        把 Claude 的成功做法整理成策略 + 审核
+   └─ checks.ts          重放时的环境检查（窗口、结果）
 scripts/                 端到端测试、测试服安装脚本
 tools/testmenus/         测试用的菜单插件（源码 + jar）
 docs/PLAN.md             总体规划

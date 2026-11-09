@@ -5,6 +5,7 @@ import { normalizeName } from "../bot/text.js";
 import type { LlmClient } from "../brain/llm.js";
 import type { Config } from "../config.js";
 import { checkCommand } from "../safety/commands.js";
+import { POST_WINDOW_TOOLS, PRE_WINDOW_TOOLS, type StepCheck } from "./checks.js";
 import type { Strategy } from "./library.js";
 import { compileTrigger, instantiate, matchTrigger, type ParamSpec, type StrategyStep } from "./matcher.js";
 
@@ -15,6 +16,9 @@ export interface TraceEntry {
   ok: boolean;
   text: string;
   meta?: Record<string, unknown>;
+  /** Title of the open window right before / after this call (null = none open). Recorded by code. */
+  preWindow?: string | null;
+  postWindow?: string | null;
 }
 
 /** Tools that only look at things; a strategy may drop them, and they alone are not worth learning. */
@@ -125,7 +129,7 @@ function sameStep(step: StrategyStep, done: TraceEntry): boolean {
  */
 export function reviewStrategy(
   compiled: CompiledStrategy,
-  input: { instruction: string; owner: string; trace: TraceEntry[] },
+  input: { instruction: string; owner: string; trace: TraceEntry[]; gained?: string[] },
   config: Config,
 ): ReviewResult {
   if (!compiled.reusable) return { ok: false, reason: `不可复用：${compiled.reason}` };
@@ -183,6 +187,21 @@ export function reviewStrategy(
     }
   }
 
+  // Environment checks (muscle-mem style): copy what code observed around each successful step.
+  acting.forEach((step, i) => {
+    const seen = done[i]!;
+    const check: StepCheck = {};
+    if (PRE_WINDOW_TOOLS.has(step.tool) && seen.preWindow !== undefined) check.preWindow = seen.preWindow;
+    if (POST_WINDOW_TOOLS.has(step.tool) && seen.postWindow !== undefined) check.postWindow = seen.postWindow;
+    if (Object.keys(check).length) step.check = check;
+  });
+  // Expected effect: items that went up during the task. A value that came from a param becomes
+  // "{param}", so "砍三个白桦木" later expects birch_log, not oak_log.
+  const gained = [...new Set((input.gained ?? []).map((item) => {
+    const p = Object.entries(values).find(([, v]) => String(v.value) === item);
+    return p ? `{${p[0]}}` : item;
+  }))];
+
   const risk = steps
     .map((s) => getAction(s.tool)!.risk)
     .reduce<RiskLevel>((a, b) => (RISK_ORDER[b] > RISK_ORDER[a] ? b : a), "low");
@@ -193,6 +212,7 @@ export function reviewStrategy(
       triggers: compiled.triggers,
       params,
       steps,
+      ...(gained.length ? { expect: { gained } } : {}),
       reply: compiled.reply || "好了",
       risk,
       status: risk === "high" ? "pending" : "probation",

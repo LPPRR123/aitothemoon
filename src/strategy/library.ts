@@ -26,7 +26,19 @@ export const StrategySchema = z.object({
   name: z.string(),
   triggers: z.array(z.string()).min(1),
   params: z.array(ParamSchema).default([]),
-  steps: z.array(z.object({ tool: z.string(), input: z.record(z.string(), z.unknown()) })).min(1),
+  steps: z
+    .array(
+      z.object({
+        tool: z.string(),
+        input: z.record(z.string(), z.unknown()),
+        check: z
+          .object({ preWindow: z.string().nullable().optional(), postWindow: z.string().nullable().optional() })
+          .optional(),
+      }),
+    )
+    .min(1),
+  /** Expected effect of the whole strategy: at least one of these items must increase ("{param}" allowed). */
+  expect: z.object({ gained: z.array(z.string()) }).optional(),
   reply: z.string().default("好了"),
   risk: z.enum(["low", "medium", "high"]),
   status: z.enum(["pending", "probation", "active", "disabled"]),

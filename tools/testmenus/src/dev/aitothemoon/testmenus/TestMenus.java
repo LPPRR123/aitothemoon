@@ -31,6 +31,9 @@ public final class TestMenus extends JavaPlugin implements Listener {
         @Override public Inventory getInventory() { return inv; }
     }
 
+    /** Title of the main menu; /menutitle changes it to simulate a server updating its menus. */
+    private String mainTitle = "§8服务器菜单";
+
     @Override public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
     }
@@ -46,7 +49,7 @@ public final class TestMenus extends JavaPlugin implements Listener {
 
     private void openMain(Player p) {
         MenuHolder h = new MenuHolder("main");
-        Inventory inv = getServer().createInventory(h, 27, "§8服务器菜单");
+        Inventory inv = getServer().createInventory(h, 27, mainTitle);
         h.inv = inv;
         inv.setItem(11, item(Material.GRASS_BLOCK, "§a生存服", "§7点击进入生存服"));
         inv.setItem(13, item(Material.EMERALD, "§b商店", "§7打开商店"));
@@ -67,6 +70,11 @@ public final class TestMenus extends JavaPlugin implements Listener {
     @Override public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
         if (cmd.getName().equalsIgnoreCase("menu")) {
             if (sender instanceof Player p) openMain(p);
+            return true;
+        }
+        if (cmd.getName().equalsIgnoreCase("menutitle")) {
+            mainTitle = "§8" + (args.length > 0 ? String.join(" ", args) : "服务器菜单");
+            sender.sendMessage("§a[TestMenus] 主菜单标题改为: " + mainTitle);
             return true;
         }
         if (cmd.getName().equalsIgnoreCase("spawnnpc")) {

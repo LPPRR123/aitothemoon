@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { parseConfig } from "../src/config.js";
+import { gainedItems, normalizeTitle, sameWindow } from "../src/strategy/checks.js";
 import { reviewStrategy, type CompiledStrategy, type TraceEntry } from "../src/strategy/compiler.js";
 import { StrategyLibrary } from "../src/strategy/library.js";
 import { fillReply, instantiate, matchTrigger, normalizeInstruction, parseNumber, type ParamSpec } from "../src/strategy/matcher.js";
@@ -177,5 +178,51 @@ describe("library", () => {
     assert.equal(lib.all.length, 1);
     assert.ok(strategy.triggers.includes("弄{count}个{block}"));
     assert.ok(lib.match("弄四个橡木"));
+  });
+});
+
+describe("environment checks", () => {
+  it("compares window titles loosely", () => {
+    assert.ok(sameWindow("商店 第2页 余额:150", "§8商店 第3页 余额:20"));
+    assert.ok(!sameWindow("服务器菜单", "活动菜单"));
+    assert.ok(sameWindow(null, null));
+    assert.ok(!sameWindow(null, "服务器菜单"));
+    assert.equal(normalizeTitle(null), null);
+  });
+  it("finds gained items", () => {
+    const before = new Map([["oak_log", 2], ["dirt", 5]]);
+    const after = new Map([["oak_log", 5], ["dirt", 4], ["oak_sapling", 1]]);
+    assert.deepEqual(gainedItems(before, after).sort(), ["oak_log", "oak_sapling"]);
+  });
+  it("attaches recorded windows and expected gains to a learned strategy", () => {
+    const menu: CompiledStrategy = {
+      reusable: true, reason: "", name: "买面包", triggers: ["买面包", "去菜单买面包"], params: [],
+      steps: [
+        { tool: "run_command", input_json: '{"command":"/menu"}' },
+        { tool: "click_slot", input_json: '{"name":"商店"}' },
+        { tool: "click_slot", input_json: '{"name":"面包"}' },
+        { tool: "close_window", input_json: "{}" },
+      ],
+      reply: "买好了",
+    };
+    const trace: TraceEntry[] = [
+      { tool: "run_command", input: { command: "/menu" }, ok: true, text: "", preWindow: null, postWindow: "服务器菜单" },
+      { tool: "click_slot", input: { slot: 13 }, ok: true, text: "", meta: { clickedName: "商店" }, preWindow: "服务器菜单", postWindow: "商店" },
+      { tool: "click_slot", input: { slot: 10 }, ok: true, text: "", meta: { clickedName: "面包 x5" }, preWindow: "商店", postWindow: "商店" },
+      { tool: "close_window", input: {}, ok: true, text: "", preWindow: "商店", postWindow: null },
+    ];
+    const r = reviewStrategy(menu, { instruction: "买面包", owner: "Steve", trace, gained: ["bread"] }, config);
+    assert.ok(r.ok, r.ok ? "" : r.reason);
+    if (!r.ok) return;
+    const checks = r.candidate.steps.map((st) => st.check);
+    assert.deepEqual(checks[0], { postWindow: "服务器菜单" }, "commands check what they opened, not what was open before");
+    assert.deepEqual(checks[1], { preWindow: "服务器菜单", postWindow: "商店" });
+    assert.deepEqual(checks[3], { preWindow: "商店" });
+    assert.deepEqual(r.candidate.expect, { gained: ["bread"] });
+  });
+  it("turns gained items that came from a param into a template", () => {
+    const r = reviewStrategy(compiledLogs, { instruction: "砍三个木头", owner: "Steve", trace: traceLogs, gained: ["oak_log", "oak_sapling"] }, config);
+    assert.ok(r.ok && r.candidate.expect);
+    if (r.ok) assert.deepEqual(r.candidate.expect!.gained.sort(), ["oak_sapling", "{block}"].sort());
   });
 });

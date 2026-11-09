@@ -6,6 +6,10 @@ description: Simulates server GUI menus and NPC menus for bot testing
 commands:
   menu:
     description: Open the test server menu
+  menutitle:
+    description: Change the main menu title (simulates a server changing its menus)
+    usage: /menutitle <title>
+    permission: testmenus.admin
   spawnnpc:
     description: Spawn a test NPC that opens the menu on right-click
     usage: /spawnnpc <name>

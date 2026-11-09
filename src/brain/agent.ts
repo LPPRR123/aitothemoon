@@ -2,7 +2,9 @@ import { ACTIONS, runAction, toolInputSchema } from "../actions/index.js";
 import { stopEverything } from "../actions/movement.js";
 import type { BotManager } from "../bot/BotManager.js";
 import type { ChatLine, IncomingChat } from "../bot/chat.js";
-import { observe } from "../bot/perception.js";
+import { inventoryCounts, observe, windowTitle } from "../bot/perception.js";
+import { waitFor } from "../actions/util.js";
+import { describeWindowTitle, gainedItems, sameWindow } from "../strategy/checks.js";
 import type { Config } from "../config.js";
 import { createLogger } from "../logger.js";
 import { describeApiError, type LlmClient, type MessageParam, type Tool, type ToolResultBlock, type ToolUseBlock } from "./llm.js";
@@ -200,36 +202,77 @@ export class Agent {
         return;
       }
       if (task.abort.signal.aborted || outcome.interrupted) return;
-      note = `我先按以前学会的做法「${hit.strategy.name}」去做，但第 ${outcome.step} 步 ${outcome.tool} 失败了：${outcome.error}。这次情况不一样，请你接手，完成主人的要求。`;
+      note = outcome.started
+        ? `我先按以前学会的做法「${hit.strategy.name}」去做，但第 ${outcome.step} 步 ${outcome.tool} 出了问题：${outcome.error}。这次情况不一样，请你接手，完成主人的要求（注意前面的步骤已经做过了）。`
+        : `我本来想按学过的做法「${hit.strategy.name}」去做，但开始前发现环境和学的时候不一样：${outcome.error}。请你根据现在的情况完成主人的要求。`;
     }
 
     this.strategies?.recordLlmTask();
+    const botAtStart = this.manager.bot;
+    const before = botAtStart ? inventoryCounts(botAtStart) : null;
     const final = await this.loop(task, message, note);
     if (!final || task.abort.signal.aborted) return;
     this.reply(task.owner, task.whisper, final);
-    if (!task.interrupted) void this.learn(task, message, final);
+    const gained = before && this.manager.bot === botAtStart ? gainedItems(before, inventoryCounts(botAtStart!)) : [];
+    if (!task.interrupted) void this.learn(task, message, final, gained);
   }
 
+  /**
+   * Replay a learned strategy with environment checks. A mismatch before the first step means
+   * "this is a different situation" (no penalty, the model takes over); a mismatch or failure
+   * later counts against the strategy.
+   */
   private async runStrategy(
     task: Task,
     hit: StrategyMatch,
-  ): Promise<{ ok: true; reply: string } | { ok: false; interrupted: boolean; step: number; tool: string; error: string }> {
+  ): Promise<
+    | { ok: true; reply: string }
+    | { ok: false; interrupted: boolean; started: boolean; step: number; tool: string; error: string }
+  > {
     const { strategy, values } = hit;
     log.info(`使用学过的策略 #${strategy.id}「${strategy.name}」（不调用 AI）`);
+    const bot = this.manager.bot;
+    const before = bot ? inventoryCounts(bot) : new Map<string, number>();
     let last = "";
+    let started = false;
+    const fail = (step: number, tool: string, error: string, penalize: boolean) => {
+      if (penalize) this.strategies!.recordResult(strategy.id, false);
+      const b = this.manager.bot;
+      if (b?.currentWindow) b.closeWindow(b.currentWindow); // don't leave a stray menu open for the model
+      log.info(`策略 #${strategy.id} 第 ${step} 步没有通过：${error}${penalize ? "" : "（环境不同，不算失败）"}`);
+      return { ok: false as const, interrupted: false, started, step, tool, error };
+    };
+
     for (let i = 0; i < strategy.steps.length; i++) {
       const step = strategy.steps[i]!;
+      const current = this.manager.bot;
+      if (!current) return { ok: false, interrupted: true, started, step: i + 1, tool: step.tool, error: "掉线了" };
+      if (step.check?.preWindow !== undefined && !sameWindow(step.check.preWindow, windowTitle(current))) {
+        const msg = `这一步应该在${describeWindowTitle(step.check.preWindow)}里做，现在是${describeWindowTitle(windowTitle(current))}`;
+        return fail(i + 1, step.tool, msg, started);
+      }
       const input = instantiate(step.input, values, task.owner);
       const r = await this.executeStep(task, step.tool, input, false);
       if (task.abort.signal.aborted || r.interrupted) {
-        return { ok: false, interrupted: true, step: i + 1, tool: step.tool, error: "被打断" };
+        return { ok: false, interrupted: true, started, step: i + 1, tool: step.tool, error: "被打断" };
       }
-      if (!r.ok) {
-        this.strategies!.recordResult(strategy.id, false);
-        return { ok: false, interrupted: false, step: i + 1, tool: step.tool, error: r.text.split("\n")[0] ?? "" };
+      if (!READ_ONLY_TOOLS.has(step.tool)) started = true;
+      if (!r.ok) return fail(i + 1, step.tool, r.text.split("\n")[0] ?? "", true);
+      if (step.check?.postWindow !== undefined && !sameWindow(step.check.postWindow, windowTitle(current))) {
+        const msg = `做完这一步应该是${describeWindowTitle(step.check.postWindow)}，实际是${describeWindowTitle(windowTitle(current))}`;
+        return fail(i + 1, step.tool, msg, true);
       }
       last = r.text;
     }
+
+    // Effect check: at least one of the items gained when this was learned must go up again.
+    const expected = (strategy.expect?.gained ?? []).map((g) => String(instantiate(g, values, task.owner)));
+    if (expected.length && this.manager.bot) {
+      const b = this.manager.bot;
+      const got = await waitFor(() => expected.some((item) => (inventoryCounts(b).get(item) ?? 0) > (before.get(item) ?? 0)), 2_500);
+      if (!got) return fail(strategy.steps.length, "（结果检查）", `做完了，但背包里没有多出 ${expected.join("/")}`, true);
+    }
+
     this.strategies!.recordResult(strategy.id, true);
     this.lastStrategyRun = { id: strategy.id, at: Date.now() };
     const result = (last.split("\n")[0] ?? "").slice(0, 80);
@@ -237,7 +280,7 @@ export class Agent {
   }
 
   /** After the model solved something new: compile it into a strategy, review it, save it. */
-  private async learn(task: Task, instruction: string, reply: string): Promise<void> {
+  private async learn(task: Task, instruction: string, reply: string, gained: string[]): Promise<void> {
     if (!this.strategies || !this.config.strategy.learn) return;
     if (!task.trace.some((t) => t.ok && !READ_ONLY_TOOLS.has(t.tool))) return;
     try {
@@ -248,7 +291,7 @@ export class Agent {
         AbortSignal.timeout(120_000),
       );
       if (!compiled) return;
-      const review = reviewStrategy(compiled, { instruction, owner: task.owner, trace: task.trace }, this.config);
+      const review = reviewStrategy(compiled, { instruction, owner: task.owner, trace: task.trace, gained }, this.config);
       if (!review.ok) {
         log.info(`这次没有学成策略：${review.reason}`);
         return;
@@ -386,6 +429,7 @@ export class Agent {
     task.toolAbort = toolAbort;
     const signal = AbortSignal.any([task.abort.signal, toolAbort.signal]);
     log.info(`调用 ${tool} ${JSON.stringify(input)}`);
+    const preWindow = windowTitle(bot);
     const result = await runAction(
       {
         bot,
@@ -409,7 +453,15 @@ export class Agent {
       text = `这个动作被主人的新消息打断了（${result.text}）`;
     }
     if (record) {
-      task.trace.push({ tool, input: (input ?? {}) as Record<string, unknown>, ok: result.ok && !interrupted, text, meta: result.meta });
+      task.trace.push({
+        tool,
+        input: (input ?? {}) as Record<string, unknown>,
+        ok: result.ok && !interrupted,
+        text,
+        meta: result.meta,
+        preWindow,
+        postWindow: windowTitle(bot),
+      });
     }
     log.info(`结果 ${tool}：${text.split("\n")[0]}`);
     return { ok: result.ok && !interrupted, text, interrupted };

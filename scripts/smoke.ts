@@ -208,6 +208,17 @@ async function main() {
   const bread2 = count("bread");
   r = await say("AIBot 去菜单买面包", 30_000);
   check("学会的菜单策略（按按钮文字点击）", learnedMenu && llm.taskRequests === requests && count("bread") >= bread2 + 5, `AI 请求 ${llm.taskRequests - requests} 次，bread=${count("bread")}，回复：${r}`);
+  // Environment check: the server "changes its menu"; the learned strategy must notice and hand over.
+  await op("/menutitle 活动菜单");
+  requests = llm.taskRequests;
+  const bread3 = count("bread");
+  r = await say("AIBot 去菜单买面包", 30_000);
+  check(
+    "菜单变了：环境检查发现不同，交给 AI",
+    llm.taskRequests === requests + 1 && llm.lastTaskHadNote && count("bread") === bread3 && !ai.currentWindow,
+    `AI 请求 ${llm.taskRequests - requests} 次，带说明=${llm.lastTaskHadNote}，bread 变化 ${count("bread") - bread3}，菜单已关=${!ai.currentWindow}，回复：${r}`,
+  );
+  await op("/menutitle 服务器菜单");
   r = await say("AIBot 不对", 8_000);
   check("说\"不对\"会忘掉刚用的策略", /忘掉/.test(r) && library.all.find((x) => x.name === "菜单买面包")?.status === "disabled", r);
   r = await say("AIBot 学会了什么", 8_000);

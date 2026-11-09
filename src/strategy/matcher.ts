@@ -1,3 +1,5 @@
+import type { StepCheck } from "./checks.js";
+
 /**
  * Deterministic matching of owner instructions against learned strategies. No model calls:
  * this is the part that answers the common cases cheaply and instantly.
@@ -16,6 +18,8 @@ export interface StrategyStep {
   tool: string;
   /** Tool input. A string "{name}" is replaced by the param value; "{owner}" by the owner name. */
   input: Record<string, unknown>;
+  /** Environment recorded around this step when it was learned (see checks.ts). */
+  check?: StepCheck;
 }
 
 const PREFIXES = /^(请你?|麻烦你?|帮我|帮忙|你能不能|能不能|可以|你)+/;
