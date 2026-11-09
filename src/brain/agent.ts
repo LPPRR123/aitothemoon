@@ -2,7 +2,8 @@ import { ACTIONS, precheckAction, runAction, toolInputSchema, type ActionContext
 import { findPlayerEntity, stopEverything } from "../actions/movement.js";
 import type { BotManager } from "../bot/BotManager.js";
 import type { ChatLine, IncomingChat } from "../bot/chat.js";
-import { inventoryCounts, observe, windowTitle } from "../bot/perception.js";
+import { describeItem, inventoryCounts, observe, windowTitle } from "../bot/perception.js";
+import { describeDue, isGameNight, parseReminder } from "../memory/reminders.js";
 import { waitFor } from "../actions/util.js";
 import { describeWindowTitle, gainedItems, sameWindow, TELEPORT_DISTANCE } from "../strategy/checks.js";
 import type { Config } from "../config.js";
@@ -120,6 +121,22 @@ export class Agent {
   attach(): void {
     this.manager.chat.on("message", (m) => this.onMessage(m));
     this.manager.on("disconnected", () => this.cancel("连接断开"));
+    if (this.memory) setInterval(() => this.checkReminders(), 5_000).unref();
+  }
+
+  /** Deliver reminders that are due (waits while the owner is offline). No model call. */
+  checkReminders(): void {
+    const bot = this.manager.bot;
+    if (!bot || !this.manager.ready || !this.memory) return;
+    const due = this.memory.takeDueReminders(
+      { isNight: isGameNight(bot.time.timeOfDay), day: bot.time.day },
+      (name) => Object.keys(bot.players).some((p) => p.toLowerCase() === name.toLowerCase()),
+    );
+    for (const r of due) {
+      log.info(`提醒 ${r.owner}：${r.text}`);
+      this.manager.sender.say(`/msg ${r.owner} 提醒你：${r.text}`);
+      this.memory.addEpisode(`提醒了主人：${r.text}`, 0.3);
+    }
   }
 
   cancel(reason: string): void {
@@ -336,7 +353,7 @@ export class Agent {
    */
   private async goToRememberedPlace(task: Task, message: string): Promise<{ done: boolean; note?: string }> {
     const m = /^(去|到|回)(.+?)(那里|那儿|那边|附近)?$/.exec(normalizeInstruction(message));
-    const place = m && this.memory?.find(m[2]!, "place");
+    const place = m && this.memory?.findPlace(m[2]!);
     if (!place?.place || !this.memory) return { done: false };
     const bot = this.manager.bot;
     if (!bot) return { done: false };
@@ -370,6 +387,27 @@ export class Agent {
     if (!memory) return false;
     const t = normalizeInstruction(text);
     const say = (msg: string) => this.reply(owner, whisper, msg);
+
+    if (/提醒我/.test(t)) {
+      const parsed = parseReminder(t, Date.now());
+      if (parsed) {
+        const r = memory.addReminder({ owner, text: parsed.text, due: parsed.due, repeat: parsed.repeat });
+        say(`好的，${describeDue(r.due, r.repeat, Date.now())}提醒你${r.text}（#${r.id}）`);
+        return true;
+      }
+      // Unusual wording: let the model set it with set_reminder.
+    }
+    if (/^(提醒列表|有哪些提醒|你要提醒我什么|还有什么提醒)$/.test(t)) {
+      const list = memory.reminders();
+      say(list.length ? `还有 ${list.length} 个提醒：${list.map((r) => `#${r.id} ${describeDue(r.due, r.repeat, Date.now())}${r.text}`).join(" ")}` : "现在没有要提醒你的事");
+      return true;
+    }
+    const cancel = /^取消提醒\s*#?(\d+)$/.exec(t);
+    if (cancel) {
+      const id = Number(cancel[1]);
+      say(memory.cancelReminder(id) ? `好的，取消了提醒 #${id}` : `没有提醒 #${id}`);
+      return true;
+    }
 
     let m = /^记住(这里|这儿|这)是(.+)$/.exec(t);
     if (m) {
@@ -515,6 +553,71 @@ export class Agent {
     return "这件事步骤太多了，我先停下，你可以换个说法再告诉我";
   }
 
+  /**
+   * Server knowledge, recorded by code while the bot works (no model call): which menu opens
+   * how and what buttons it has, where an NPC stands and what it opens, what a command answers.
+   * Seeing the same again confirms it; seeing something different is recorded as a correction.
+   */
+  private recordKnowledge(
+    tool: string,
+    input: Record<string, unknown>,
+    meta: Record<string, unknown>,
+    preWindow: string | null,
+    postWindow: string | null,
+  ): void {
+    const memory = this.memory;
+    const bot = this.manager.bot;
+    if (!memory || !bot) return;
+    const msgs = Array.isArray(meta.serverMessages) ? (meta.serverMessages as string[]) : [];
+    if (postWindow && postWindow !== preWindow && bot.currentWindow) {
+      const win = bot.currentWindow;
+      const buttons: string[] = [];
+      for (let i = 0; i < win.inventoryStart && buttons.length < 15; i++) {
+        const item = win.slots[i];
+        const name = item ? describeItem(bot, item).name : "";
+        if (name && !buttons.includes(name)) buttons.push(name);
+      }
+      const how =
+        tool === "run_command" ? `指令 ${String(input.command ?? "")}`
+        : tool === "interact_entity" ? `右键「${String(meta.entity ?? input.name ?? "")}」`
+        : tool === "use_held_item" ? `右键手上的 ${bot.heldItem?.name ?? "物品"}`
+        : tool === "click_slot" ? `在${preWindow ? `「${preWindow}」` : "菜单"}里点「${String(meta.clickedName ?? "")}」`
+        : tool;
+      // One menu can be opened several ways (a command and an NPC): another way is not a
+      // correction, so merge the ways instead of replacing them. Buttons are taken as last seen.
+      const subject = `菜单「${postWindow}」`;
+      const known = /^打开方式：(.+?)；按钮：/.exec(memory.find(subject)?.content ?? "")?.[1]?.split(" / ") ?? [];
+      const ways = [...new Set([...known, how])].slice(-4);
+      memory.remember({
+        kind: "fact",
+        subject,
+        content: `打开方式：${ways.join(" / ")}；按钮：${buttons.join("、") || "（空）"}`,
+        source: "observed",
+        importance: 0.4,
+      });
+    }
+    if (tool === "interact_entity" && typeof meta.entity === "string" && meta.at && typeof meta.at === "object") {
+      const at = meta.at as { x: number; y: number; z: number };
+      memory.remember({
+        kind: "place",
+        subject: `NPC「${meta.entity}」`,
+        content: postWindow ? `右键打开「${postWindow}」` : msgs.length ? `右键后：${msgs[msgs.length - 1]}` : "可以右键交互",
+        place: { ...at, dimension: String(bot.game.dimension) },
+        source: "observed",
+        importance: 0.4,
+      });
+    }
+    if (tool === "run_command" && typeof meta.command === "string" && !postWindow) {
+      memory.remember({
+        kind: "fact",
+        subject: `指令 ${meta.command.slice(0, 30)}`,
+        content: msgs.length ? `服务器回复：${msgs.slice(-2).join(" / ").slice(0, 120)}` : "服务器没有回复",
+        source: "observed",
+        importance: 0.3,
+      });
+    }
+  }
+
   private actionContext(task: Task, signal: AbortSignal): ActionContext {
     return {
       bot: this.manager.bot!,
@@ -564,6 +667,8 @@ export class Agent {
       task.interrupted = true;
       text = `这个动作被主人的新消息打断了（${result.text}）`;
     }
+    const postWindow = windowTitle(bot);
+    if (!interrupted && result.ok) this.recordKnowledge(tool, (input ?? {}) as Record<string, unknown>, result.meta ?? {}, preWindow, postWindow);
     if (record) {
       task.trace.push({
         tool,

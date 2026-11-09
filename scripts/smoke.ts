@@ -335,6 +335,49 @@ async function main() {
   const r2 = await say("AIBot 你记得哪些地方", 8_000);
   check("忘掉记忆", /忘掉了/.test(r) && !memory.find("矿洞") && !/矿洞/.test(r2), `${r} / ${r2}`);
 
+  // 13. Reminders (parsed by code), game-time reminders, server knowledge, fuzzy places
+  const waitReply = async (re: RegExp, ms: number) => {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      const hit = aiReplies.find((x) => re.test(x));
+      if (hit) return hit;
+      await sleep(250);
+    }
+    return null;
+  };
+  requests = llm.taskRequests;
+  r = await say("AIBot 10秒后提醒我关熔炉", 8_000);
+  const fired = await waitReply(/提醒你：关熔炉/, 25_000);
+  check("定时提醒（代码解析，不调用 AI）", llm.taskRequests === requests && /10 秒后/.test(r) && !!fired, `设置：${r}，提醒：${fired ?? "没收到"}`);
+  await op("/time set day");
+  r = await say("AIBot 天黑了提醒我回家", 8_000);
+  await sleep(1000);
+  const early = aiReplies.some((x) => /提醒你：回家/.test(x));
+  await op("/time set night");
+  const nightFired = await waitReply(/提醒你：回家/, 15_000);
+  await op("/time set day");
+  check("游戏里天黑时提醒", !early && !!nightFired && memory.reminders().length === 0, `设置：${r}，提醒：${nightFired ?? "没收到"}`);
+
+  const menuKnow = memory.find("菜单「服务器菜单」");
+  const npcKnow = memory.find("NPC「菜单NPC」");
+  const cmdKnow = memory.find("指令 /warp test");
+  check(
+    "自动记下菜单、NPC、指令（代码记录）",
+    !!menuKnow && /指令 \/menu/.test(menuKnow.content) && /右键「菜单NPC」/.test(menuKnow.content) && /商店/.test(menuKnow.content) && menuKnow.source === "observed" &&
+      !!npcKnow?.place && /服务器菜单/.test(npcKnow.content) &&
+      !!cmdKnow && /Unknown command/.test(cmdKnow.content),
+    [menuKnow, npcKnow, cmdKnow].map((b) => (b ? memory.describe(b) : "缺")).join(" | ").slice(0, 300),
+  );
+
+  r = await say("AIBot 记住这里是铁矿洞", 8_000);
+  const mine = memory.find("铁矿洞")!;
+  await op(`/tp AIBot ${o.x - 30} ${o.y} ${o.z + 4}`);
+  await sleep(1500);
+  requests = llm.taskRequests;
+  r = await say("AIBot 去铁矿", 60_000);
+  const atMine = Math.hypot(ai.entity.position.x - mine.place!.x, ai.entity.position.z - mine.place!.z) < 3.5;
+  check("地点名字说得不完全一样也能认出（去铁矿 → 铁矿洞）", llm.taskRequests === requests && atMine, `AI 请求 ${llm.taskRequests - requests} 次，到达=${atMine}，回复：${r}`);
+
   // 11. Reconnect after being kicked
   await op(`/kick AIBot 测试重连`);
   const back = await Promise.race([

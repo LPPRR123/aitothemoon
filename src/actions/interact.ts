@@ -37,7 +37,10 @@ export const runCommand = defineAction({
     const opened = waitForWindow(bot, 2_000);
     const [messages, win] = await Promise.all([listen, opened]);
     if (win) await sleep(300); // let the server fill the slots
-    return `已执行 /${decision.command}\n${windowOrMessages(bot, messages)}`;
+    return {
+      text: `已执行 /${decision.command}\n${windowOrMessages(bot, messages)}`,
+      meta: { command: `/${decision.command}`, serverMessages: messages.slice(-3) },
+    };
   },
 });
 
@@ -182,7 +185,15 @@ export const interactEntity = defineAction({
     else bot.attack(target);
     const [messages, win] = await Promise.all([listen, opened]);
     if (win) await sleep(300);
-    return `已${click === "right" ? "右键" : "左键"}点击「${entityLabel(target)}」\n${windowOrMessages(bot, messages)}`;
+    const p = target.position;
+    return {
+      text: `已${click === "right" ? "右键" : "左键"}点击「${entityLabel(target)}」\n${windowOrMessages(bot, messages)}`,
+      meta: {
+        entity: entityLabel(target),
+        at: { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z) },
+        serverMessages: messages.slice(-3),
+      },
+    };
   },
 });
 

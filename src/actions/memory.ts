@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { describeDue } from "../memory/reminders.js";
 import { formatPlace, type BeliefKind } from "../memory/store.js";
 import { ActionError, defineAction, type ActionContext } from "./types.js";
 
@@ -100,6 +101,27 @@ export const doubt = defineAction({
   },
 });
 
-export const memoryActions = [remember, recall, forget, doubt];
+export const setReminder = defineAction({
+  name: "set_reminder",
+  description:
+    "答应主人的提醒：到时间（minutes 分钟后），或者游戏里天黑/天亮时（when），私聊提醒主人。repeat=true 表示每天天黑/天亮都提醒。只有主人要求提醒时才用。",
+  risk: "low",
+  schema: z.object({
+    what: z.string().min(1).max(100).describe("要提醒的内容，例如 关熔炉"),
+    minutes: z.number().positive().max(60 * 24 * 7).optional(),
+    when: z.enum(["night", "day"]).optional(),
+    repeat: z.boolean().default(false),
+  }),
+  async run(ctx, { what, minutes, when, repeat }) {
+    const memory = store(ctx);
+    if (!ctx.ownerMessages.some((m) => /提醒|叫我|告诉我/.test(m))) throw new ActionError("只有主人要求提醒时才能设提醒");
+    if (minutes === undefined && !when) throw new ActionError("需要 minutes 或 when");
+    const due = when ? { type: when } : { type: "time" as const, at: Date.now() + minutes! * 60_000 };
+    const r = memory.addReminder({ owner: ctx.owner, text: what, due, repeat: !!when && repeat });
+    return `好的，提醒 #${r.id}：${what}（${describeDue(r.due, r.repeat, Date.now())}）`;
+  },
+});
+
+export const memoryActions = [remember, recall, forget, doubt, setReminder];
 export const MEMORY_TOOLS = new Set(memoryActions.map((a) => a.name));
 export { formatPlace };

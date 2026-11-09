@@ -43,16 +43,42 @@ export type Belief = z.infer<typeof BeliefSchema>;
 const EpisodeSchema = z.object({ time: z.number(), text: z.string(), importance: z.number() });
 export type Episode = z.infer<typeof EpisodeSchema>;
 
+/** When a reminder fires: at a real time, or the next game night / day. */
+const DueSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("time"), at: z.number() }),
+  z.object({ type: z.literal("night") }),
+  z.object({ type: z.literal("day") }),
+]);
+export type ReminderDue = z.infer<typeof DueSchema>;
+
+const ReminderSchema = z.object({
+  id: z.number().int(),
+  owner: z.string(),
+  text: z.string(),
+  due: DueSchema,
+  /** Repeat every game night/day (a promise like "每天晚上提醒我"). */
+  repeat: z.boolean(),
+  createdAt: z.number(),
+  done: z.boolean(),
+  /** Game day on which a night/day reminder last fired, so it fires once per night/day. */
+  lastFiredDay: z.number().nullable(),
+});
+export type Reminder = z.infer<typeof ReminderSchema>;
+
 const FileSchema = z.object({
   version: z.literal(1),
   nextId: z.number().int(),
   beliefs: z.array(BeliefSchema),
   episodes: z.array(EpisodeSchema),
+  reminders: z.array(ReminderSchema).default([]),
+  nextReminderId: z.number().int().default(1),
 });
 type FileData = z.infer<typeof FileSchema>;
 
 const DAY = 86_400_000;
 const MAX_EPISODES = 300;
+/** Earlier versions kept per belief (menus change often; history must not grow forever). */
+const MAX_HISTORY = 5;
 
 export interface MemoryOptions {
   /** Unused, unpinned memories lose half their "keep" score every this many days. */
@@ -91,7 +117,7 @@ export function formatPlace(p: Place): string {
 }
 
 export class MemoryStore {
-  private data: FileData = { version: 1, nextId: 1, beliefs: [], episodes: [] };
+  private data: FileData = { version: 1, nextId: 1, beliefs: [], episodes: [], reminders: [], nextReminderId: 1 };
   private readonly now: () => number;
   private writesSinceConsolidate = 0;
 
@@ -301,6 +327,72 @@ export class MemoryStore {
     return this.data.beliefs.find((b) => b.id === id);
   }
 
+  /**
+   * Find a remembered place by name, tolerating small differences ("铁矿" finds "铁矿洞").
+   * Only a clear best match is returned; anything ambiguous is left to the model.
+   */
+  findPlace(name: string): Belief | undefined {
+    const exact = this.find(name, "place");
+    if (exact) return exact;
+    const q = normalizeSubject(name);
+    const qb = bigrams(name);
+    const scored = this.beliefs("place")
+      .map((b) => {
+        const s = normalizeSubject(b.subject);
+        const contains = s.includes(q) || q.includes(s) ? 0.5 : 0;
+        const sb = bigrams(b.subject);
+        let overlap = 0;
+        for (const g of qb) if (sb.has(g)) overlap++;
+        const dice = qb.size + sb.size ? (2 * overlap) / (qb.size + sb.size) : 0;
+        return { b, score: contains + dice };
+      })
+      .sort((a, b) => b.score - a.score);
+    const [best, second] = scored;
+    if (!best || best.score < 0.6) return undefined;
+    if (second && best.score - second.score < 0.2) return undefined;
+    return best.b;
+  }
+
+  addReminder(input: { owner: string; text: string; due: ReminderDue; repeat: boolean }): Reminder {
+    const r: Reminder = { id: this.data.nextReminderId++, createdAt: this.now(), done: false, lastFiredDay: null, ...input };
+    this.data.reminders.push(r);
+    this.save();
+    return r;
+  }
+
+  reminders(): Reminder[] {
+    return this.data.reminders.filter((r) => !r.done);
+  }
+
+  cancelReminder(id: number): boolean {
+    const r = this.data.reminders.find((x) => x.id === id && !x.done);
+    if (!r) return false;
+    r.done = true;
+    this.save();
+    return true;
+  }
+
+  /**
+   * Reminders to deliver now. A reminder waits while its owner is offline. Night/day reminders
+   * fire once per game night/day; repeating ones stay, one-off ones are marked done.
+   */
+  takeDueReminders(game: { isNight: boolean; day: number }, ownerOnline: (name: string) => boolean): Reminder[] {
+    const now = this.now();
+    const due: Reminder[] = [];
+    for (const r of this.data.reminders) {
+      if (r.done || !ownerOnline(r.owner)) continue;
+      let fire = false;
+      if (r.due.type === "time") fire = now >= r.due.at;
+      else if (r.lastFiredDay !== game.day) fire = r.due.type === "night" ? game.isNight : !game.isNight;
+      if (!fire) continue;
+      due.push(r);
+      r.lastFiredDay = game.day;
+      if (!r.repeat || r.due.type === "time") r.done = true;
+    }
+    if (due.length) this.save();
+    return due;
+  }
+
   /** One line per belief, with where it came from and whether it may be wrong. */
   describe(b: Belief): string {
     const where = b.place ? ` ${formatPlace(b.place)}` : "";
@@ -333,6 +425,21 @@ export class MemoryStore {
       section("和这次指令有关的记忆", this.search(instruction, 6)),
       section("记得的地点", this.beliefs("place").slice(0, 8)),
     ];
+    // Being relevant to an instruction counts as using a memory (keeps it from fading).
+    for (const id of shown) {
+      const b = this.get(id)!;
+      b.uses++;
+      b.lastUsed = this.now();
+    }
+    // Index of everything else, names only: the model decides what is related in meaning and
+    // can look it up with `recall`. Cheap "semantic search" without an embedding model.
+    const rest = this.beliefs()
+      .filter((b) => !shown.has(b.id))
+      .sort((a, b) => this.retention(b) - this.retention(a))
+      .slice(0, 40);
+    if (rest.length) parts.push(`【记忆目录（需要时用 recall 查看）】\n${rest.map((b) => b.subject).join("、")}`);
+    const pending = this.reminders();
+    if (pending.length) parts.push(`【还没提醒的事】\n${pending.map((r) => `- ${r.text}`).join("\n")}`);
     const recent = this.data.episodes.slice(-5);
     if (recent.length) {
       const fmt = (t: number) => {
@@ -341,10 +448,12 @@ export class MemoryStore {
       };
       parts.push(`【最近发生的事】\n${recent.map((e) => `- ${fmt(e.time)}：${e.text}`).join("\n")}`);
     }
+    if (shown.size) this.save();
     return parts.filter(Boolean).join("\n");
   }
 
   private save(): void {
+    for (const b of this.data.beliefs) if (b.history.length > MAX_HISTORY) b.history.splice(0, b.history.length - MAX_HISTORY);
     if (!this.file) return;
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const tmp = `${this.file}.tmp`;

@@ -31,7 +31,7 @@ export interface TraceEntry {
  */
 export const READ_ONLY_TOOLS = new Set([
   "get_status", "read_window", "list_server_commands",
-  "remember", "recall", "forget", "doubt",
+  "remember", "recall", "forget", "doubt", "set_reminder",
 ]);
 
 const CompiledSchema = z.strictObject({
@@ -167,7 +167,7 @@ export function reviewStrategy(
   }
 
   const steps: StrategyStep[] = [];
-  for (const s of compiled.steps.filter((x) => !["remember", "recall", "forget", "doubt"].includes(x.tool))) {
+  for (const s of compiled.steps.filter((x) => !["remember", "recall", "forget", "doubt", "set_reminder"].includes(x.tool))) {
     if (!getAction(s.tool)) return { ok: false, reason: `没有这个工具：${s.tool}` };
     let parsed: unknown;
     try {
