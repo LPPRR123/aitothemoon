@@ -5,7 +5,9 @@ import { normalizeName } from "../bot/text.js";
 import type { LlmClient } from "../brain/llm.js";
 import type { Config } from "../config.js";
 import { checkCommand } from "../safety/commands.js";
-import { DIMENSION_TOOLS, POST_WINDOW_TOOLS, PRE_WINDOW_TOOLS, TELEPORT_TOOLS, type StepCheck } from "./checks.js";
+import {
+  CHEST_TOOLS, DIMENSION_TOOLS, POST_WINDOW_TOOLS, PRE_WINDOW_TOOLS, RANDOM_OUTCOME_TOOLS, TELEPORT_TOOLS, type StepCheck,
+} from "./checks.js";
 import type { Strategy } from "./library.js";
 import { compileTrigger, instantiate, matchTrigger, type ParamSpec, type StrategyStep } from "./matcher.js";
 
@@ -132,6 +134,11 @@ function sameStep(step: StrategyStep, done: TraceEntry): boolean {
   if (step.tool === "use_held_item" && typeof step.input.item === "string" && !done.input.item) {
     return done.preHeld === step.input.item;
   }
+  if (CHEST_TOOLS.has(step.tool) && step.input.x !== undefined && done.input.x === undefined) {
+    const at = done.meta?.chestAt as { x: number; y: number; z: number } | undefined;
+    const { x, y, z, ...rest } = step.input;
+    return !!at && at.x === x && at.y === y && at.z === z && canonical(step.tool, rest) === canonical(done.tool, done.input);
+  }
   return canonical(step.tool, step.input) === canonical(done.tool, done.input);
 }
 
@@ -212,10 +219,14 @@ export function reviewStrategy(
     // Right-clicking "whatever is in hand" only works if the same thing is in hand: make the
     // strategy take it out first (like clicking menu buttons by name instead of slot number).
     if (step.tool === "use_held_item" && !step.input.item && seen.preHeld) step.input = { ...step.input, item: seen.preHeld };
+    // "The nearest chest" becomes "that chest": replaying elsewhere must not use someone else's chest.
+    const chestAt = seen.meta?.chestAt as { x: number; y: number; z: number } | undefined;
+    if (CHEST_TOOLS.has(step.tool) && step.input.x === undefined && chestAt) step.input = { ...step.input, ...chestAt };
   });
   // Expected effect: items that went up during the task. A value that came from a param becomes
   // "{param}", so "砍三个白桦木" later expects birch_log, not oak_log.
-  const gained = [...new Set((input.gained ?? []).map((item) => {
+  const randomOutcome = steps.some((s) => RANDOM_OUTCOME_TOOLS.has(s.tool));
+  const gained = randomOutcome ? [] : [...new Set((input.gained ?? []).map((item) => {
     const p = Object.entries(values).find(([, v]) => String(v.value) === item);
     return p ? `{${p[0]}}` : item;
   }))];

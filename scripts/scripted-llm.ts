@@ -26,6 +26,11 @@ export class ScriptedLlm implements LlmClient {
     private readonly compiles: Record<string, CompiledStrategy> = {},
   ) {}
 
+  /** Add a script at run time (for instructions that contain coordinates known only then). */
+  addScript(instruction: string, steps: Step[]): void {
+    this.scripts[instruction] = steps;
+  }
+
   async create(params: MessageParams, signal: AbortSignal): Promise<Message> {
     if (signal.aborted) throw new Error("aborted");
     const first = params.messages[0];

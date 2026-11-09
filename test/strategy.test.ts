@@ -265,3 +265,32 @@ describe("position and held-item checks", () => {
     assert.ok(!reviewStrategy(wrongItem, { instruction: "用指南针开菜单", owner: "Steve", trace }, config).ok);
   });
 });
+
+describe("survival actions in strategies", () => {
+  it("pins the chest a strategy was learned with", () => {
+    const put: CompiledStrategy = {
+      reusable: true, reason: "", name: "放泥土", triggers: ["把泥土放进箱子", "泥土放箱子"], params: [],
+      steps: [{ tool: "put_in_chest", input_json: '{"item":"dirt"}' }], reply: "放好了",
+    };
+    const trace: TraceEntry[] = [
+      { tool: "put_in_chest", input: { item: "dirt" }, ok: true, text: "", meta: { chestAt: { x: 5, y: 64, z: -3 } }, preDimension: "overworld" },
+    ];
+    const r = reviewStrategy(put, { instruction: "把泥土放进箱子", owner: "Steve", trace }, config);
+    assert.ok(r.ok, r.ok ? "" : r.reason);
+    if (r.ok) {
+      assert.deepEqual(r.candidate.steps[0]!.input, { item: "dirt", x: 5, y: 64, z: -3 });
+      assert.deepEqual(r.candidate.steps[0]!.check, { preDimension: "overworld" });
+    }
+    const otherChest = { ...put, steps: [{ tool: "put_in_chest", input_json: '{"item":"dirt","x":9,"y":64,"z":9}' }] };
+    assert.ok(!reviewStrategy(otherChest, { instruction: "把泥土放进箱子", owner: "Steve", trace }, config).ok);
+  });
+  it("does not expect fixed loot from fighting", () => {
+    const fight: CompiledStrategy = {
+      reusable: true, reason: "", name: "杀牛", triggers: ["杀一头牛", "去杀牛"], params: [],
+      steps: [{ tool: "attack_mob", input_json: '{"mob":"cow"}' }], reply: "杀了",
+    };
+    const trace: TraceEntry[] = [{ tool: "attack_mob", input: { mob: "cow" }, ok: true, text: "" }];
+    const r = reviewStrategy(fight, { instruction: "杀一头牛", owner: "Steve", trace, gained: ["beef", "leather"] }, config);
+    assert.ok(r.ok && r.candidate.expect === undefined);
+  });
+});

@@ -4,6 +4,7 @@ import { gatherActions } from "./gather.js";
 import { interactActions } from "./interact.js";
 import { inventoryActions } from "./inventory.js";
 import { memoryActions } from "./memory.js";
+import { survivalActions } from "./survival.js";
 import { movementActions } from "./movement.js";
 import { ActionError, type Action, type ActionContext } from "./types.js";
 
@@ -14,6 +15,7 @@ export const ACTIONS: Action[] = [
   ...movementActions,
   ...gatherActions,
   ...interactActions,
+  ...survivalActions,
   ...memoryActions,
 ] as Action[];
 

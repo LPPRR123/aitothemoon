@@ -22,7 +22,13 @@ export const PRE_WINDOW_TOOLS = new Set(["click_slot", "close_window"]);
 /** Steps that open, change or close a window. */
 export const POST_WINDOW_TOOLS = new Set(["run_command", "interact_entity", "use_held_item", "click_slot"]);
 /** Steps whose meaning depends on where the bot is (absolute coordinates, nearby blocks or NPCs). */
-export const DIMENSION_TOOLS = new Set(["go_to", "collect_block", "interact_entity"]);
+export const DIMENSION_TOOLS = new Set([
+  "go_to", "collect_block", "interact_entity", "place_block", "view_chest", "put_in_chest", "take_from_chest",
+]);
+/** Chest steps: a learned strategy uses the same chest as when it was learned, not just the nearest. */
+export const CHEST_TOOLS = new Set(["view_chest", "put_in_chest", "take_from_chest"]);
+/** Steps whose outcome is random (mob drops): no "you should have gained X" check for them. */
+export const RANDOM_OUTCOME_TOOLS = new Set(["attack_mob"]);
 /** Steps that may teleport the bot; we record whether they did. */
 export const TELEPORT_TOOLS = new Set(["run_command", "click_slot", "interact_entity"]);
 /** Moving further than this during one step counts as a teleport (walking steps are excluded above). */

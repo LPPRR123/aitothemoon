@@ -98,7 +98,7 @@ export const collectBlock = defineAction({
 });
 
 /** Find a spot next to the bot where a block can be placed on top of a solid block. */
-function findPlaceSpot(bot: Bot): Block | null {
+export function findPlaceSpot(bot: Bot): Block | null {
   const base = bot.entity.position.floored();
   for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1], [2, 0], [0, 2]]) {
     const below = bot.blockAt(base.offset(dx!, -1, dz!));

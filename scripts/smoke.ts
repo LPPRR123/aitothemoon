@@ -10,6 +10,7 @@
  * real agent loop and tools, with a scripted model (ScriptedLlm) standing in for Claude.
  */
 import mineflayer, { type Bot } from "mineflayer";
+import { Vec3 } from "vec3";
 import { AuthMeSession } from "../src/bot/authme.js";
 import { BotManager } from "../src/bot/BotManager.js";
 import { attachReflexes } from "../src/bot/reflexes.js";
@@ -65,6 +66,14 @@ const llm = new ScriptedLlm({
     { name: "doubt", input: { subject: "矿洞", reason: "再去还是没有矿" } },
   ],
   去矿洞: [], // reached when the remembered place is doubtful: the model is asked instead
+  烧两个铁: [{ name: "smelt_item", input: { item: "raw_iron", count: 2 } }],
+  把泥土放进箱子: [{ name: "put_in_chest", input: { item: "dirt" } }],
+  看看箱子里有什么: [{ name: "view_chest", input: {} }],
+  从箱子拿五个泥土: [{ name: "take_from_chest", input: { item: "dirt", count: 5 } }],
+  杀一头牛: [{ name: "attack_mob", input: { mob: "cow" } }],
+  去睡觉: [{ name: "sleep", input: {} }],
+  看看村民卖什么: [{ name: "villager_trades", input: {} }],
+  用小麦换绿宝石: [{ name: "trade_with_villager", input: { index: 1, times: 1 } }],
 }, {
   // What the model returns when asked to turn a solved task into a reusable strategy.
   砍三个木头: {
@@ -82,6 +91,12 @@ const llm = new ScriptedLlm({
     triggers: ["回家", "传送回家", "回家吧"], params: [],
     steps: [{ tool: "run_command", input_json: '{"command":"/home"}' }],
     reply: "到家了",
+  },
+  把泥土放进箱子: {
+    reusable: true, reason: "", name: "泥土放箱子",
+    triggers: ["把泥土放进箱子", "泥土放箱子里"], params: [],
+    steps: [{ tool: "put_in_chest", input_json: '{"item":"dirt"}' }],
+    reply: "放好了",
   },
   打开菜单买面包: {
     reusable: true, reason: "", name: "菜单买面包",
@@ -377,6 +392,65 @@ async function main() {
   r = await say("AIBot 去铁矿", 60_000);
   const atMine = Math.hypot(ai.entity.position.x - mine.place!.x, ai.entity.position.z - mine.place!.z) < 3.5;
   check("地点名字说得不完全一样也能认出（去铁矿 → 铁矿洞）", llm.taskRequests === requests && atMine, `AI 请求 ${llm.taskRequests - requests} 次，到达=${atMine}，回复：${r}`);
+
+  // 14. Survival actions (approach from Mindcraft), on fresh flat land
+  const B = { x: o.x + 300, y: o.y, z: o.z + 300 };
+  await op(`/tp AIBot ${B.x} ${B.y} ${B.z}`);
+  await sleep(3000);
+  await op("/clear AIBot");
+  await op("/give AIBot raw_iron 2");
+  await op("/give AIBot coal 1");
+  await op("/give AIBot furnace 1");
+  await sleep(1000);
+  r = await say("AIBot 烧两个铁", 90_000);
+  check("熔炼（自己放熔炉、加燃料、取出）", count("iron_ingot") >= 2, `iron_ingot=${count("iron_ingot")}，回复：${r}`);
+
+  await op(`/setblock ${B.x + 2} ${B.y} ${B.z} chest`);
+  await op("/give AIBot dirt 10");
+  await sleep(1000);
+  r = await say("AIBot 把泥土放进箱子", 30_000);
+  check("放进箱子", count("dirt") === 0, `dirt=${count("dirt")}，回复：${r}`);
+  await waitLearned(5);
+  const chestStrategy = library.all.find((x) => x.name === "泥土放箱子");
+  check("学成的箱子策略记住了是哪个箱子", chestStrategy?.steps[0]?.input.x === B.x + 2 && chestStrategy?.steps[0]?.input.z === B.z, JSON.stringify(chestStrategy?.steps[0]?.input ?? null));
+  r = await say("AIBot 看看箱子里有什么", 20_000);
+  check("查看箱子", /dirt×10/.test(r), r);
+  r = await say("AIBot 从箱子拿五个泥土", 20_000);
+  check("从箱子拿", count("dirt") === 5, `dirt=${count("dirt")}，回复：${r}`);
+
+  await op("/give AIBot cobblestone 3");
+  await sleep(800);
+  const spot = { x: B.x - 2, y: B.y, z: B.z };
+  llm.addScript(`在 ${spot.x} ${spot.y} ${spot.z} 放一个圆石`, [{ name: "place_block", input: { block: "cobblestone", ...spot } }]);
+  llm.addScript("在箱子那里放圆石", [{ name: "place_block", input: { block: "cobblestone", x: B.x + 2, y: B.y, z: B.z } }]);
+  r = await say(`AIBot 在 ${spot.x} ${spot.y} ${spot.z} 放一个圆石`, 20_000);
+  check("放方块", ai.blockAt(new Vec3(spot.x, spot.y, spot.z))?.name === "cobblestone", `方块=${ai.blockAt(new Vec3(spot.x, spot.y, spot.z))?.name}，回复：${r}`);
+  r = await say("AIBot 在箱子那里放圆石", 20_000);
+  check("不会挖掉已有的方块（箱子还在）", /不会把它挖掉/.test(r) && ai.blockAt(new Vec3(B.x + 2, B.y, B.z))?.name === "chest", r);
+
+  await op(`/summon cow ${B.x + 4} ${B.y} ${B.z + 3}`);
+  await sleep(1500);
+  r = await say("AIBot 杀一头牛", 60_000);
+  const cowLeft = Object.values(ai.entities).some((e) => e.name === "cow" && e.position.distanceTo(ai.entity.position) < 24);
+  check("打怪（只打生物）", /打死了 cow/.test(r) && !cowLeft, r);
+
+  await op(`/setblock ${B.x - 3} ${B.y} ${B.z + 2} red_bed[facing=south,part=foot]`);
+  await op(`/setblock ${B.x - 3} ${B.y} ${B.z + 3} red_bed[facing=south,part=head]`);
+  await op("/time set 14000");
+  await sleep(1500);
+  r = await say("AIBot 去睡觉", 30_000);
+  const slept = ai.isSleeping;
+  await op("/time set day");
+  await sleep(3000);
+  check("睡觉（天亮自己起床）", slept && !ai.isSleeping, `睡下=${slept}，起床=${!ai.isSleeping}，回复：${r}`);
+
+  await op(`/summon villager ${B.x + 3} ${B.y} ${B.z - 3} {NoAI:1b,VillagerData:{profession:"minecraft:farmer",level:2,type:"minecraft:plains"},Offers:{Recipes:[{buy:{id:"minecraft:wheat",Count:20b},sell:{id:"minecraft:emerald",Count:1b},maxUses:12}]}}`);
+  await op("/give AIBot wheat 20");
+  await sleep(1500);
+  r = await say("AIBot 看看村民卖什么", 20_000);
+  check("查看村民交易", /wheat×20 → emerald×1/.test(r), r);
+  r = await say("AIBot 用小麦换绿宝石", 20_000);
+  check("和村民交易", count("emerald") === 1 && count("wheat") === 0, `emerald=${count("emerald")} wheat=${count("wheat")}，回复：${r}`);
 
   // 11. Reconnect after being kicked
   await op(`/kick AIBot 测试重连`);

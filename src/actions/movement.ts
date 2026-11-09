@@ -2,7 +2,8 @@ import type { Bot } from "mineflayer";
 import pathfinderPkg from "mineflayer-pathfinder";
 import { z } from "zod";
 import type { Config } from "../config.js";
-import { ActionError, defineAction } from "./types.js";
+import { Vec3 } from "vec3";
+import { ActionError, defineAction, type ActionContext } from "./types.js";
 import { guarded } from "./util.js";
 
 const { Movements, goals } = pathfinderPkg;
@@ -20,6 +21,7 @@ export function travelMovements(bot: Bot, config: Config) {
 }
 
 export function stopEverything(bot: Bot): void {
+  if (bot.isSleeping) bot.wake().catch(() => {});
   bot.pathfinder.stop();
   bot.pathfinder.setGoal(null);
   bot.collectBlock?.cancelTask().catch(() => {});
@@ -36,6 +38,25 @@ export function findPlayerEntity(bot: Bot, name: string) {
 }
 
 const PATH_TIMEOUT = 120_000;
+
+/** Walk until within `range` blocks of a position (cancellable). */
+export async function walkNear(
+  ctx: ActionContext,
+  pos: { x: number; y: number; z: number },
+  range: number,
+  what: string,
+  timeoutMs = 60_000,
+): Promise<void> {
+  const { bot } = ctx;
+  if (bot.entity.position.distanceTo(new Vec3(pos.x, pos.y, pos.z)) <= range) return;
+  bot.pathfinder.setMovements(travelMovements(bot, ctx.config));
+  await guarded(bot.pathfinder.goto(new goals.GoalNear(pos.x, pos.y, pos.z, range)), {
+    signal: ctx.signal,
+    timeoutMs,
+    cancel: () => bot.pathfinder.stop(),
+    what,
+  });
+}
 
 export const goTo = defineAction({
   name: "go_to",
