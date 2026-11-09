@@ -15,6 +15,7 @@ import { BotManager } from "../src/bot/BotManager.js";
 import { attachReflexes } from "../src/bot/reflexes.js";
 import { Agent } from "../src/brain/agent.js";
 import { parseConfig } from "../src/config.js";
+import { MemoryStore } from "../src/memory/store.js";
 import { StrategyLibrary } from "../src/strategy/library.js";
 import { ScriptedLlm } from "./scripted-llm.js";
 
@@ -58,6 +59,12 @@ const llm = new ScriptedLlm({
   砍两个木头: [], // only reached when the learned strategy fails: the model just answers
   回家: [{ name: "run_command", input: { command: "/home" } }],
   回家吧: [], // reached when the learned /home strategy does not teleport (cooldown)
+  记住我喜欢红石: [{ name: "remember", input: { kind: "preference", subject: "主人的爱好", content: "喜欢红石" } }],
+  矿洞那里没有矿: [
+    { name: "doubt", input: { subject: "矿洞", reason: "去了发现没有矿" } },
+    { name: "doubt", input: { subject: "矿洞", reason: "再去还是没有矿" } },
+  ],
+  去矿洞: [], // reached when the remembered place is doubtful: the model is asked instead
 }, {
   // What the model returns when asked to turn a solved task into a reusable strategy.
   砍三个木头: {
@@ -145,7 +152,8 @@ async function main() {
 
   const manager = new BotManager(config, { mcPassword: "AiPass123" });
   const library = new StrategyLibrary(null, { promoteAfter: 2 });
-  const agent = new Agent(manager, config, llm, library);
+  const memory = new MemoryStore(null);
+  const agent = new Agent(manager, config, llm, library, memory);
   agent.attach();
   const ready = new Promise<Bot>((r) => manager.once("ready", r));
   manager.start();
@@ -293,6 +301,39 @@ async function main() {
   await op("/testcooldown off");
   r = await say("AIBot 统计", 8_000);
   check("学习统计", /直接按学过的做法完成 [1-9]/.test(r), r);
+
+  // 12. Long-term memory
+  const ownerPos = owner.entity.position.clone();
+  r = await say("AIBot 记住这里是基地", 8_000);
+  const base = memory.find("基地");
+  check("记住地点（不调用 AI）", !!base?.place && base.pinned && Math.hypot(base.place.x - ownerPos.x, base.place.z - ownerPos.z) < 2, r);
+  await op(`/tp AIBot ${o.x - 30} ${o.y} ${o.z - 8}`);
+  await sleep(1500);
+  requests = llm.taskRequests;
+  r = await say("AIBot 去基地", 60_000);
+  const atBase = base?.place ? Math.hypot(ai.entity.position.x - base.place.x, ai.entity.position.z - base.place.z) < 3.5 : false;
+  check("去记得的地点（不调用 AI，到达后记忆更可信）", llm.taskRequests === requests && atBase && (memory.find("基地")?.verifications ?? 0) >= 1, `AI 请求 ${llm.taskRequests - requests} 次，到达=${atBase}，回复：${r}`);
+  r = await say("AIBot 你记得哪些地方", 8_000);
+  check("列出记得的地点", /基地/.test(r), r);
+
+  r = await say("AIBot 记住我喜欢红石", 15_000);
+  const pref = memory.find("主人的爱好");
+  check("Claude 记下主人的偏好（主人亲口说的，永不自动遗忘）", pref?.content === "喜欢红石" && pref.source === "owner" && pref.pinned, r);
+
+  r = await say("AIBot 记住这里是矿洞", 8_000);
+  r = await say("AIBot 矿洞那里没有矿", 15_000);
+  check(
+    "之后的任务都带着记忆（偏好、地点）",
+    /喜欢红石/.test(llm.lastTaskPrompt) && /基地/.test(llm.lastTaskPrompt) && /<memory>/.test(llm.lastTaskPrompt),
+    llm.lastTaskPrompt.match(/<memory>[\s\S]*?<\/memory>/)?.[0].replace(/\n/g, " ").slice(0, 200) ?? "没有 memory",
+  );
+  check("两次不符后记忆变成\"可能是错的\"", memory.find("矿洞")?.status === "doubtful", `状态=${memory.find("矿洞")?.status}，回复：${r}`);
+  requests = llm.taskRequests;
+  r = await say("AIBot 去矿洞", 20_000);
+  check("可能错的地点不盲目去，交给 AI 先确认", llm.taskRequests === requests + 1 && /可能是错的/.test(llm.lastTaskPrompt), `AI 请求 ${llm.taskRequests - requests} 次，回复：${r}`);
+  r = await say("AIBot 忘掉矿洞", 8_000);
+  const r2 = await say("AIBot 你记得哪些地方", 8_000);
+  check("忘掉记忆", /忘掉了/.test(r) && !memory.find("矿洞") && !/矿洞/.test(r2), `${r} / ${r2}`);
 
   // 11. Reconnect after being kicked
   await op(`/kick AIBot 测试重连`);

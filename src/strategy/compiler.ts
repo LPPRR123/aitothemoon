@@ -25,8 +25,14 @@ export interface TraceEntry {
   preHeld?: string | null;
 }
 
-/** Tools that only look at things; a strategy may drop them, and they alone are not worth learning. */
-export const READ_ONLY_TOOLS = new Set(["get_status", "read_window", "list_server_commands"]);
+/**
+ * Tools a strategy never replays: ones that only look at things, and memory tools (replaying a
+ * fixed "remember X" makes no sense). A task made only of these is not worth learning.
+ */
+export const READ_ONLY_TOOLS = new Set([
+  "get_status", "read_window", "list_server_commands",
+  "remember", "recall", "forget", "doubt",
+]);
 
 const CompiledSchema = z.strictObject({
   reusable: z.boolean(),
@@ -161,7 +167,7 @@ export function reviewStrategy(
   }
 
   const steps: StrategyStep[] = [];
-  for (const s of compiled.steps) {
+  for (const s of compiled.steps.filter((x) => !["remember", "recall", "forget", "doubt"].includes(x.tool))) {
     if (!getAction(s.tool)) return { ok: false, reason: `没有这个工具：${s.tool}` };
     let parsed: unknown;
     try {

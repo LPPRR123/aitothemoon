@@ -63,3 +63,9 @@ strategy:
   learn: true            # Claude 成功做完一件新事后，自动整理成策略、审核、存起来
   file: data/strategies.json   # 策略库文件，可以直接打开看
   promoteAfter: 2        # 新策略成功几次后转正
+
+memory:
+  # 长期记忆：地点、事实、主人的偏好和规矩、最近发生的事。
+  enabled: true
+  file: data/memory.json       # 记忆文件，可以直接打开看
+  halfLifeDays: 14             # 不常用、也不是你让它记的东西，每 14 天"保留分"减半，太低会被归档

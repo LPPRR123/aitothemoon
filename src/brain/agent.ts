@@ -1,5 +1,5 @@
 import { ACTIONS, precheckAction, runAction, toolInputSchema, type ActionContext } from "../actions/index.js";
-import { stopEverything } from "../actions/movement.js";
+import { findPlayerEntity, stopEverything } from "../actions/movement.js";
 import type { BotManager } from "../bot/BotManager.js";
 import type { ChatLine, IncomingChat } from "../bot/chat.js";
 import { inventoryCounts, observe, windowTitle } from "../bot/perception.js";
@@ -11,7 +11,8 @@ import { describeApiError, type LlmClient, type MessageParam, type Tool, type To
 import { buildInterjection, buildSystemPrompt, buildTaskPrompt } from "./prompts.js";
 import { compileStrategy, READ_ONLY_TOOLS, reviewStrategy, type TraceEntry } from "../strategy/compiler.js";
 import type { StrategyLibrary, StrategyMatch } from "../strategy/library.js";
-import { fillReply, instantiate } from "../strategy/matcher.js";
+import { fillReply, instantiate, normalizeInstruction } from "../strategy/matcher.js";
+import { formatPlace, type MemoryStore } from "../memory/store.js";
 
 const log = createLogger("agent");
 
@@ -102,6 +103,7 @@ export class Agent {
     private readonly config: Config,
     private readonly llm: LlmClient,
     private readonly strategies: StrategyLibrary | null = null,
+    private readonly memory: MemoryStore | null = null,
   ) {
     this.system = buildSystemPrompt(config);
     this.tools = ACTIONS.map((a) => ({
@@ -148,6 +150,7 @@ export class Agent {
     }
 
     if (this.handleOwnerCommand(m.username, m.whisper, text)) return;
+    if (this.handleMemoryCommand(m.username, m.whisper, text)) return;
 
     if (this.task) {
       // Deliver it to the running task and interrupt the current action so the model can react.
@@ -199,6 +202,7 @@ export class Agent {
       const outcome = await this.runStrategy(task, hit);
       if (outcome.ok) {
         this.reply(task.owner, task.whisper, outcome.reply);
+        this.memory?.addEpisode(`主人让我「${message}」，按学过的做法完成了`, 0.2);
         return;
       }
       if (task.abort.signal.aborted || outcome.interrupted) return;
@@ -207,12 +211,19 @@ export class Agent {
         : `我本来想按学过的做法「${hit.strategy.name}」去做，但开始前发现环境和学的时候不一样：${outcome.error}。请你根据现在的情况完成主人的要求。`;
     }
 
+    if (!note) {
+      const place = await this.goToRememberedPlace(task, message);
+      if (place.done) return;
+      note = place.note;
+    }
+
     this.strategies?.recordLlmTask();
     const botAtStart = this.manager.bot;
     const before = botAtStart ? inventoryCounts(botAtStart) : null;
     const final = await this.loop(task, message, note);
     if (!final || task.abort.signal.aborted) return;
     this.reply(task.owner, task.whisper, final);
+    this.memory?.addEpisode(`主人让我「${message}」，我说：${toChatText(final, 80)}`, 0.3);
     const gained = before && this.manager.bot === botAtStart ? gainedItems(before, inventoryCounts(botAtStart!)) : [];
     if (!task.interrupted) void this.learn(task, message, final, gained);
   }
@@ -318,6 +329,84 @@ export class Agent {
     }
   }
 
+  /**
+   * "去家" / "到矿洞那里": walk to a remembered place without calling the model. Arriving
+   * confirms the memory; failing to get there contradicts it and hands over to the model.
+   * A doubtful place is not trusted blindly: the model gets it with a warning.
+   */
+  private async goToRememberedPlace(task: Task, message: string): Promise<{ done: boolean; note?: string }> {
+    const m = /^(去|到|回)(.+?)(那里|那儿|那边|附近)?$/.exec(normalizeInstruction(message));
+    const place = m && this.memory?.find(m[2]!, "place");
+    if (!place?.place || !this.memory) return { done: false };
+    const bot = this.manager.bot;
+    if (!bot) return { done: false };
+    const where = formatPlace(place.place);
+    if (place.status === "doubtful") {
+      return { done: false, note: `记忆里「${place.subject}」在 ${where}，但这条记忆可能是错的。请先确认，必要时问主人。` };
+    }
+    if (place.place.dimension !== String(bot.game.dimension)) {
+      return { done: false, note: `记忆里「${place.subject}」在 ${place.place.dimension} 的 ${where}，但你现在在 ${bot.game.dimension}。` };
+    }
+    log.info(`去记得的地点「${place.subject}」${where}（不调用 AI）`);
+    this.memory.use(place.id);
+    const r = await this.executeStep(task, "go_to", { ...place.place, range: 2 }, false);
+    if (task.abort.signal.aborted || r.interrupted) return { done: true };
+    if (r.ok) {
+      this.memory.verify(place.id);
+      this.reply(task.owner, task.whisper, `到${place.subject}了`);
+      this.memory.addEpisode(`去了「${place.subject}」${where}`, 0.2);
+      return { done: true };
+    }
+    const after = this.memory.contradict(place.id, `走不到：${r.text.split("\n")[0]}`);
+    return {
+      done: false,
+      note: `我想去记得的「${place.subject}」${where}，但没走到：${r.text.split("\n")[0]}。${after?.status === "doubtful" ? "这条记忆现在被标记为可能是错的。" : ""}请你接手。`,
+    };
+  }
+
+  /** Memory commands in chat. Deterministic, no model call. Returns true if handled. */
+  private handleMemoryCommand(owner: string, whisper: boolean, text: string): boolean {
+    const memory = this.memory;
+    if (!memory) return false;
+    const t = normalizeInstruction(text);
+    const say = (msg: string) => this.reply(owner, whisper, msg);
+
+    let m = /^记住(这里|这儿|这)是(.+)$/.exec(t);
+    if (m) {
+      const bot = this.manager.bot;
+      if (!bot) return false;
+      // "这里" is where the owner stands, if the bot can see them; otherwise where the bot is.
+      const at = (findPlayerEntity(bot, owner) ?? bot.entity).position;
+      const place = { x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z), dimension: String(bot.game.dimension) };
+      const name = m[2]!.trim();
+      const { change } = memory.remember({ kind: "place", subject: name, content: "", place, source: "owner", importance: 0.9, pinned: true });
+      say(`${change === "corrected" ? "改好了" : "记住了"}，「${name}」在 ${formatPlace(place)}`);
+      return true;
+    }
+    if (/^(你)?(都)?记得(哪些|什么)地方$|^地点(列表)?$/.test(t)) {
+      const places = memory.beliefs("place");
+      if (!places.length) return say("我还没记住任何地方"), true;
+      const items = places.slice(0, 10).map((b) => `${b.subject}${formatPlace(b.place!)}${b.status === "doubtful" ? "（可能不准）" : ""}`);
+      say(`我记得 ${places.length} 个地方：${items.join(" ")}`);
+      return true;
+    }
+    if (/^(你)?(都)?记得(什么|哪些)$|^记忆(列表)?$/.test(t)) {
+      const all = memory.beliefs();
+      if (!all.length) return say("我还没记住什么"), true;
+      say(`我记得 ${all.length} 件事：${all.slice(0, 10).map((b) => b.subject).join("、")}`);
+      return true;
+    }
+    m = /^(忘掉|忘记|删掉)(?!(策略)?\s*#?\d+$)(.+)$/.exec(t);
+    if (m) {
+      const subject = m[3]!.trim();
+      const removed = memory.forget(subject);
+      if (!removed.length) return false; // maybe not a memory command after all; let the model handle it
+      say(`好的，忘掉了「${subject}」`);
+      return true;
+    }
+    return false;
+  }
+
   /** Strategy management in chat. Deterministic, no model call. Returns true if handled. */
   private handleOwnerCommand(owner: string, whisper: boolean, text: string): boolean {
     const lib = this.strategies;
@@ -377,6 +466,7 @@ export class Agent {
           recentChat: formatChatLines(recent, this.config),
           observation: observe(bot),
           note,
+          memory: this.memory?.promptBlock(message) || undefined,
         }),
       },
     ];
@@ -435,6 +525,7 @@ export class Agent {
       owner: task.owner,
       ownerMessages: task.ownerMessages,
       log,
+      memory: this.memory,
     };
   }
 

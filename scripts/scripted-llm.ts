@@ -18,6 +18,8 @@ export class ScriptedLlm implements LlmClient {
   readonly compiled: string[] = [];
   /** Whether the last task prompt carried a note (a learned strategy failed first). */
   lastTaskHadNote = false;
+  /** First user message of the last task (to check what context the model was given). */
+  lastTaskPrompt = "";
 
   constructor(
     private readonly scripts: Record<string, Step[]>,
@@ -30,7 +32,10 @@ export class ScriptedLlm implements LlmClient {
     const firstText = typeof first?.content === "string" ? first.content : "";
     if (params.output_config?.format) return this.compile(params, firstText);
     this.taskRequests++;
-    if (params.messages.length === 1) this.lastTaskHadNote = firstText.includes("<note>");
+    if (params.messages.length === 1) {
+      this.lastTaskHadNote = firstText.includes("<note>");
+      this.lastTaskPrompt = firstText;
+    }
     const instruction = firstText.split("对你说：").pop()?.trim() ?? "";
     const steps = this.scripts[instruction] ?? [];
     const done = params.messages.filter((m) => m.role === "assistant").length;

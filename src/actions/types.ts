@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ChatListener, ChatSender } from "../bot/chat.js";
 import type { Config } from "../config.js";
 import type { Logger } from "../logger.js";
+import type { MemoryStore } from "../memory/store.js";
 
 export interface ActionContext {
   bot: Bot;
@@ -16,6 +17,8 @@ export interface ActionContext {
   /** Everything the owner said during the current task (used to approve commands). */
   ownerMessages: string[];
   log: Logger;
+  /** Long-term memory, if enabled. */
+  memory?: MemoryStore | null;
 }
 
 export type RiskLevel = "low" | "medium" | "high";

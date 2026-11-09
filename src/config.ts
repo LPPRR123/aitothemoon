@@ -94,6 +94,13 @@ const StrategyConfigSchema = z.object({
   promoteAfter: z.number().int().min(1).default(2),
 });
 
+const MemoryConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  file: z.string().default("data/memory.json"),
+  /** Unused memories (that the owner did not ask to keep) fade; this many days halves their score. */
+  halfLifeDays: z.number().min(1).default(14),
+});
+
 export const ConfigSchema = z.object({
   server: ServerSchema.prefault({}),
   bot: BotSchema.prefault({}),
@@ -106,6 +113,7 @@ export const ConfigSchema = z.object({
   llm: LlmSchema.prefault({}),
   agent: AgentSchema.prefault({}),
   strategy: StrategyConfigSchema.prefault({}),
+  memory: MemoryConfigSchema.prefault({}),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
