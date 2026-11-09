@@ -28,6 +28,12 @@ export interface Action<S extends z.ZodObject = z.ZodObject> {
   description: string;
   risk: RiskLevel;
   schema: S;
+  /**
+   * Optional cheap, side-effect-free check: can this action run here and now? Returns the reason
+   * it can't, or null. Used before replaying a learned strategy, so "wrong place / missing
+   * materials" is treated as a new situation instead of a broken strategy.
+   */
+  precheck?(ctx: ActionContext, input: z.infer<S>): string | null;
   run(ctx: ActionContext, input: z.infer<S>): Promise<ActionOutput>;
 }
 

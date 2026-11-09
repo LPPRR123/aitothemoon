@@ -68,6 +68,9 @@ export const goToPlayer = defineAction({
     player: z.string().describe("玩家名"),
     distance: z.number().min(1).max(10).default(2),
   }),
+  precheck(ctx, { player }) {
+    return findPlayerEntity(ctx.bot, player) ? null : `看不到玩家 ${player}`;
+  },
   async run(ctx, { player, distance }) {
     const { bot } = ctx;
     const target = findPlayerEntity(bot, player);
@@ -92,6 +95,9 @@ export const followPlayer = defineAction({
     player: z.string(),
     distance: z.number().min(1).max(10).default(2),
   }),
+  precheck(ctx, { player }) {
+    return findPlayerEntity(ctx.bot, player) ? null : `看不到玩家 ${player}`;
+  },
   async run(ctx, { player, distance }) {
     const { bot } = ctx;
     const target = findPlayerEntity(bot, player);

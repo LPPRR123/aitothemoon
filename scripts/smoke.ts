@@ -56,6 +56,8 @@ const llm = new ScriptedLlm({
   跟着我: [{ name: "follow_player", input: { player: "Owner" } }],
   砍很多木头: [{ name: "collect_block", input: { block: "oak_log", count: 30 } }],
   砍两个木头: [], // only reached when the learned strategy fails: the model just answers
+  回家: [{ name: "run_command", input: { command: "/home" } }],
+  回家吧: [], // reached when the learned /home strategy does not teleport (cooldown)
 }, {
   // What the model returns when asked to turn a solved task into a reusable strategy.
   砍三个木头: {
@@ -67,6 +69,12 @@ const llm = new ScriptedLlm({
     ],
     steps: [{ tool: "collect_block", input_json: '{"block":"{block}","count":"{count}"}' }],
     reply: "砍好了{count}个{block}",
+  },
+  回家: {
+    reusable: true, reason: "", name: "回家",
+    triggers: ["回家", "传送回家", "回家吧"], params: [],
+    steps: [{ tool: "run_command", input_json: '{"command":"/home"}' }],
+    reply: "到家了",
   },
   打开菜单买面包: {
     reusable: true, reason: "", name: "菜单买面包",
@@ -257,8 +265,32 @@ async function main() {
   await op(`/tp AIBot ${o.x + 600} ${o.y} ${o.z + 600}`); // fresh flat land: no trees within 64 blocks
   await sleep(3000);
   requests = llm.taskRequests;
+  const logStrategy = library.all.find((x) => x.name === "砍原木")!;
+  const failuresBefore = logStrategy.stats.failures;
   r = await say("AIBot 砍两个木头", 60_000);
-  check("策略失败时交给 AI 接手", llm.taskRequests > requests && llm.lastTaskHadNote, `AI 请求 ${llm.taskRequests - requests} 次，带失败说明=${llm.lastTaskHadNote}，回复：${r}`);
+  check(
+    "附近没树：预检发现环境不同，交给 AI，不扣策略分",
+    llm.taskRequests > requests && llm.lastTaskHadNote && logStrategy.stats.failures === failuresBefore && logStrategy.status !== "disabled",
+    `AI 请求 ${llm.taskRequests - requests} 次，带说明=${llm.lastTaskHadNote}，失败次数 ${failuresBefore}→${logStrategy.stats.failures}，回复：${r}`,
+  );
+
+  // Teleport check: learn "回家" (/home), reuse it, then a cooldown makes /home not teleport.
+  const home = () => ai.entity.position.distanceTo(ai.spawnPoint.offset(40, 0, 40)) < 6;
+  r = await say("AIBot 回家", 20_000);
+  const learnedHome = await waitLearned(3);
+  check("学会传送类策略（记录了会传送）", learnedHome && home() && library.all.find((x) => x.name === "回家")?.steps[0]?.check?.postMoved === true, `到家=${home()}，回复：${r}`);
+  await op(`/tp AIBot ${o.x} ${o.y} ${o.z - 4}`);
+  await sleep(1500);
+  requests = llm.taskRequests;
+  r = await say("AIBot 传送回家", 20_000);
+  check("传送策略直接复用", llm.taskRequests === requests && home(), `AI 请求 ${llm.taskRequests - requests} 次，到家=${home()}，回复：${r}`);
+  await op(`/tp AIBot ${o.x} ${o.y} ${o.z - 4}`);
+  await op("/testcooldown on");
+  await sleep(1500);
+  requests = llm.taskRequests;
+  r = await say("AIBot 回家吧", 20_000);
+  check("传送冷却：检查发现没传送，交给 AI", llm.taskRequests === requests + 1 && llm.lastTaskHadNote && !home(), `AI 请求 ${llm.taskRequests - requests} 次，带说明=${llm.lastTaskHadNote}，到家=${home()}，回复：${r}`);
+  await op("/testcooldown off");
   r = await say("AIBot 统计", 8_000);
   check("学习统计", /直接按学过的做法完成 [1-9]/.test(r), r);
 

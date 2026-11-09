@@ -33,6 +33,19 @@ export interface ActionResult {
   meta?: Record<string, unknown>;
 }
 
+/** Run an action's precheck (if it has one). Returns why it can't run now, or null. */
+export function precheckAction(ctx: ActionContext, name: string, input: unknown): string | null {
+  const action = byName.get(name);
+  if (!action) return `没有叫 ${name} 的工具`;
+  const parsed = action.schema.safeParse(input ?? {});
+  if (!parsed.success) return `参数错误：${z.prettifyError(parsed.error)}`;
+  try {
+    return action.precheck ? action.precheck(ctx, parsed.data) : null;
+  } catch (err) {
+    return `检查出错：${(err as Error).message}`;
+  }
+}
+
 /** Validate input and run an action. Never throws: failures come back as text for the model. */
 export async function runAction(ctx: ActionContext, name: string, input: unknown): Promise<ActionResult> {
   const action = byName.get(name);

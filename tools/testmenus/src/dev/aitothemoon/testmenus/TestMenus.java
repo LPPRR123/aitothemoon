@@ -33,6 +33,8 @@ public final class TestMenus extends JavaPlugin implements Listener {
 
     /** Title of the main menu; /menutitle changes it to simulate a server updating its menus. */
     private String mainTitle = "§8服务器菜单";
+    /** /testcooldown on makes /home refuse, like a teleport cooldown on a real server. */
+    private boolean homeCooldown = false;
 
     @Override public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
@@ -70,6 +72,21 @@ public final class TestMenus extends JavaPlugin implements Listener {
     @Override public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
         if (cmd.getName().equalsIgnoreCase("menu")) {
             if (sender instanceof Player p) openMain(p);
+            return true;
+        }
+        if (cmd.getName().equalsIgnoreCase("home")) {
+            if (!(sender instanceof Player p)) return true;
+            if (homeCooldown) {
+                p.sendMessage("§c[家] 传送冷却中，请稍后再试");
+                return true;
+            }
+            p.teleport(p.getWorld().getSpawnLocation().clone().add(40, 0, 40));
+            p.sendMessage("§a[家] 已传送回家");
+            return true;
+        }
+        if (cmd.getName().equalsIgnoreCase("testcooldown")) {
+            homeCooldown = args.length > 0 && args[0].equalsIgnoreCase("on");
+            sender.sendMessage("§a[TestMenus] /home 冷却: " + (homeCooldown ? "开" : "关"));
             return true;
         }
         if (cmd.getName().equalsIgnoreCase("menutitle")) {

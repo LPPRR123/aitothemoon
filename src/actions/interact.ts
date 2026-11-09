@@ -24,6 +24,10 @@ export const runCommand = defineAction({
   schema: z.object({
     command: z.string().describe("完整指令，例如 /home 或 /warp pvp"),
   }),
+  precheck(ctx, { command }) {
+    const decision = checkCommand(command, ctx.config.commands, ctx.ownerMessages);
+    return decision.ok ? null : decision.reason;
+  },
   async run(ctx, { command }) {
     const decision = checkCommand(command, ctx.config.commands, ctx.ownerMessages);
     if (!decision.ok) throw new ActionError(decision.reason);
@@ -154,6 +158,9 @@ export const interactEntity = defineAction({
     name: z.string(),
     click: z.enum(["right", "left"]).default("right"),
   }),
+  precheck(ctx, { name }) {
+    return findEntityByName(ctx.bot, name) ? null : `附近 48 格内没有名字包含"${name}"的实体`;
+  },
   async run(ctx, { name, click }) {
     const { bot } = ctx;
     const target = findEntityByName(bot, name);
@@ -184,6 +191,10 @@ export const useHeldItem = defineAction({
   description: "右键使用手里的物品（例如右键指南针/钟打开服务器菜单）。可以先指定要拿到手上的物品。",
   risk: "medium",
   schema: z.object({ item: z.string().optional().describe("先拿到手上的物品 ID，不填就用当前手持物品") }),
+  precheck(ctx, { item }) {
+    if (item) return findInventoryItem(ctx.bot, item) ? null : `背包里没有 ${item}`;
+    return ctx.bot.heldItem ? null : "手上什么都没拿";
+  },
   async run(ctx, { item }) {
     const { bot } = ctx;
     if (item) {

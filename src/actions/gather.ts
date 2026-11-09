@@ -55,6 +55,12 @@ export const collectBlock = defineAction({
     block: z.string(),
     count: z.number().int().min(1).max(64).default(1),
   }),
+  precheck(ctx, { block }) {
+    const { ids, names } = resolveBlockIds(ctx.bot, block);
+    if (!ids.length) return `不认识方块 "${block}"`;
+    if (!ctx.bot.findBlock({ matching: ids, maxDistance: 64 })) return `附近 64 格内没有 ${names.slice(0, 3).join("/")}`;
+    return null;
+  },
   async run(ctx, { block, count }) {
     const { bot } = ctx;
     const { ids, names } = resolveBlockIds(bot, block);
@@ -197,6 +203,18 @@ export const craft = defineAction({
     item: z.string(),
     count: z.number().int().min(1).max(64).default(1).describe("想得到的物品数量"),
   }),
+  precheck(ctx, { item }) {
+    const { bot } = ctx;
+    const name = item.toLowerCase().replace(/^minecraft:/, "");
+    const info = bot.registry.itemsByName[name];
+    if (!info) return `不认识物品 "${item}"`;
+    if (bot.recipesFor(info.id, null, 1, null).length) return null;
+    // recipesFor only checks that a table is present, so `true` stands for "a table will be found".
+    if (!bot.recipesFor(info.id, null, 1, true as unknown as Block).length) return `材料不够合成 ${name}`;
+    const tableId = bot.registry.blocksByName.crafting_table!.id;
+    const hasTable = bot.findBlock({ matching: tableId, maxDistance: 32 }) || bot.inventory.items().some((i) => i.name === "crafting_table");
+    return hasTable ? null : `合成 ${name} 需要工作台，但附近没有，背包里也没有`;
+  },
   async run(ctx, { item, count }) {
     const { bot } = ctx;
     const name = item.toLowerCase().replace(/^minecraft:/, "");

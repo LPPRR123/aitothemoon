@@ -32,6 +32,9 @@ export const equip = defineAction({
     item: z.string().describe("物品英文 ID，例如 iron_sword、diamond_helmet"),
     offhand: z.boolean().default(false).describe("放到副手"),
   }),
+  precheck(ctx, { item }) {
+    return findInventoryItem(ctx.bot, item) ? null : `背包里没有 ${item}`;
+  },
   async run(ctx, { item, offhand }) {
     const found = findInventoryItem(ctx.bot, item);
     if (!found) throw new ActionError(`背包里没有 ${item}`);
@@ -50,6 +53,10 @@ export const giveItem = defineAction({
     count: z.number().int().min(1).optional(),
     player: z.string().optional().describe("丢给谁，默认是主人"),
   }),
+  precheck(ctx, { item, player }) {
+    if (!findInventoryItem(ctx.bot, item)) return `背包里没有 ${item}`;
+    return findPlayerEntity(ctx.bot, player ?? ctx.owner) ? null : `看不到 ${player ?? ctx.owner}`;
+  },
   async run(ctx, { item, count, player }) {
     const { bot } = ctx;
     const to = player ?? ctx.owner;

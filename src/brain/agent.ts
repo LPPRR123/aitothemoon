@@ -1,10 +1,10 @@
-import { ACTIONS, runAction, toolInputSchema } from "../actions/index.js";
+import { ACTIONS, precheckAction, runAction, toolInputSchema, type ActionContext } from "../actions/index.js";
 import { stopEverything } from "../actions/movement.js";
 import type { BotManager } from "../bot/BotManager.js";
 import type { ChatLine, IncomingChat } from "../bot/chat.js";
 import { inventoryCounts, observe, windowTitle } from "../bot/perception.js";
 import { waitFor } from "../actions/util.js";
-import { describeWindowTitle, gainedItems, sameWindow } from "../strategy/checks.js";
+import { describeWindowTitle, gainedItems, sameWindow, TELEPORT_DISTANCE } from "../strategy/checks.js";
 import type { Config } from "../config.js";
 import { createLogger } from "../logger.js";
 import { describeApiError, type LlmClient, type MessageParam, type Tool, type ToolResultBlock, type ToolUseBlock } from "./llm.js";
@@ -251,7 +251,13 @@ export class Agent {
         const msg = `这一步应该在${describeWindowTitle(step.check.preWindow)}里做，现在是${describeWindowTitle(windowTitle(current))}`;
         return fail(i + 1, step.tool, msg, started);
       }
+      if (step.check?.preDimension && step.check.preDimension !== String(current.game.dimension)) {
+        const msg = `这一步是在 ${step.check.preDimension} 学的，现在在 ${current.game.dimension}`;
+        return fail(i + 1, step.tool, msg, started);
+      }
       const input = instantiate(step.input, values, task.owner);
+      const blocked = precheckAction(this.actionContext(task, task.abort.signal), step.tool, input);
+      if (blocked) return fail(i + 1, step.tool, blocked, started);
       const r = await this.executeStep(task, step.tool, input, false);
       if (task.abort.signal.aborted || r.interrupted) {
         return { ok: false, interrupted: true, started, step: i + 1, tool: step.tool, error: "被打断" };
@@ -261,6 +267,9 @@ export class Agent {
       if (step.check?.postWindow !== undefined && !sameWindow(step.check.postWindow, windowTitle(current))) {
         const msg = `做完这一步应该是${describeWindowTitle(step.check.postWindow)}，实际是${describeWindowTitle(windowTitle(current))}`;
         return fail(i + 1, step.tool, msg, true);
+      }
+      if (step.check?.postMoved && !r.moved) {
+        return fail(i + 1, step.tool, `学的时候这一步会传送，这次没有传送（${r.text.split("\n").slice(-1)[0]?.slice(0, 60) ?? ""}）`, true);
       }
       last = r.text;
     }
@@ -416,35 +425,47 @@ export class Agent {
     return "这件事步骤太多了，我先停下，你可以换个说法再告诉我";
   }
 
+  private actionContext(task: Task, signal: AbortSignal): ActionContext {
+    return {
+      bot: this.manager.bot!,
+      config: this.config,
+      signal,
+      sender: this.manager.sender,
+      chat: this.manager.chat,
+      owner: task.owner,
+      ownerMessages: task.ownerMessages,
+      log,
+    };
+  }
+
   /** Run one tool for the current task. `record` adds it to the trace the strategy learner reads. */
   private async executeStep(
     task: Task,
     tool: string,
     input: unknown,
     record: boolean,
-  ): Promise<{ ok: boolean; text: string; interrupted: boolean }> {
+  ): Promise<{ ok: boolean; text: string; interrupted: boolean; moved: boolean }> {
     const bot = this.manager.bot;
-    if (task.abort.signal.aborted || !bot) return { ok: false, text: "任务已取消，没有执行", interrupted: true };
+    if (task.abort.signal.aborted || !bot) return { ok: false, text: "任务已取消，没有执行", interrupted: true, moved: false };
     const toolAbort = new AbortController();
     task.toolAbort = toolAbort;
     const signal = AbortSignal.any([task.abort.signal, toolAbort.signal]);
     log.info(`调用 ${tool} ${JSON.stringify(input)}`);
     const preWindow = windowTitle(bot);
-    const result = await runAction(
-      {
-        bot,
-        config: this.config,
-        signal,
-        sender: this.manager.sender,
-        chat: this.manager.chat,
-        owner: task.owner,
-        ownerMessages: task.ownerMessages,
-        log,
-      },
-      tool,
-      input,
-    );
+    const preDimension = String(bot.game.dimension);
+    const prePos = bot.entity.position.clone();
+    const preHeld = bot.heldItem?.name ?? null;
+    // Teleports arrive as a server-forced position update; walking never triggers one.
+    let forced = 0;
+    const onForced = () => {
+      forced++;
+    };
+    bot.on("forcedMove", onForced);
+    const result = await runAction(this.actionContext(task, signal), tool, input);
     task.toolAbort = null;
+    bot.off("forcedMove", onForced);
+    const dimensionChanged = String(bot.game.dimension) !== preDimension;
+    const moved = dimensionChanged || (forced > 0 && bot.entity.position.distanceTo(prePos) > TELEPORT_DISTANCE);
     const interrupted = toolAbort.signal.aborted && !task.abort.signal.aborted;
     let text = result.text;
     if (interrupted) {
@@ -461,9 +482,12 @@ export class Agent {
         meta: result.meta,
         preWindow,
         postWindow: windowTitle(bot),
+        preDimension,
+        moved,
+        preHeld,
       });
     }
     log.info(`结果 ${tool}：${text.split("\n")[0]}`);
-    return { ok: result.ok && !interrupted, text, interrupted };
+    return { ok: result.ok && !interrupted, text, interrupted, moved };
   }
 }

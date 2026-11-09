@@ -11,12 +11,22 @@ export interface StepCheck {
   preWindow?: string | null;
   /** Title of the window that must be open after this step (commands/NPCs/clicks that open menus). */
   postWindow?: string | null;
+  /** Dimension the step must run in: coordinates and nearby targets mean nothing in another one. */
+  preDimension?: string;
+  /** Whether this step teleported the bot (e.g. /home). If it did when learned, it must again. */
+  postMoved?: boolean;
 }
 
 /** Steps whose meaning depends on which window is open when they run. */
 export const PRE_WINDOW_TOOLS = new Set(["click_slot", "close_window"]);
 /** Steps that open, change or close a window. */
 export const POST_WINDOW_TOOLS = new Set(["run_command", "interact_entity", "use_held_item", "click_slot"]);
+/** Steps whose meaning depends on where the bot is (absolute coordinates, nearby blocks or NPCs). */
+export const DIMENSION_TOOLS = new Set(["go_to", "collect_block", "interact_entity"]);
+/** Steps that may teleport the bot; we record whether they did. */
+export const TELEPORT_TOOLS = new Set(["run_command", "click_slot", "interact_entity"]);
+/** Moving further than this during one step counts as a teleport (walking steps are excluded above). */
+export const TELEPORT_DISTANCE = 8;
 
 /**
  * Window titles are compared loosely: formatting codes, digits and spaces are ignored,

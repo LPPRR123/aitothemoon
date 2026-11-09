@@ -226,3 +226,42 @@ describe("environment checks", () => {
     if (r.ok) assert.deepEqual(r.candidate.expect!.gained.sort(), ["oak_sapling", "{block}"].sort());
   });
 });
+
+describe("position and held-item checks", () => {
+  it("records the dimension for location-bound steps and teleports for commands", () => {
+    const home: CompiledStrategy = {
+      reusable: true, reason: "", name: "回家", triggers: ["回家", "传送回家"], params: [],
+      steps: [{ tool: "run_command", input_json: '{"command":"/home"}' }], reply: "到家了",
+    };
+    const trace: TraceEntry[] = [
+      { tool: "run_command", input: { command: "/home" }, ok: true, text: "", preWindow: null, postWindow: null, preDimension: "overworld", moved: true },
+    ];
+    const r = reviewStrategy(home, { instruction: "回家", owner: "Steve", trace }, config);
+    assert.ok(r.ok, r.ok ? "" : r.reason);
+    if (r.ok) assert.deepEqual(r.candidate.steps[0]!.check, { postWindow: null, postMoved: true });
+
+    const logs = reviewStrategy(compiledLogs, {
+      instruction: "砍三个木头", owner: "Steve",
+      trace: traceLogs.map((t) => ({ ...t, preDimension: "overworld", moved: false })),
+    }, config);
+    assert.ok(logs.ok);
+    if (logs.ok) assert.deepEqual(logs.candidate.steps[0]!.check, { preDimension: "overworld" });
+  });
+  it("makes a bare right-click take out the item that was in hand", () => {
+    const compass: CompiledStrategy = {
+      reusable: true, reason: "", name: "指南针菜单", triggers: ["用指南针开菜单", "打开指南针菜单"], params: [],
+      steps: [{ tool: "use_held_item", input_json: "{}" }], reply: "打开了",
+    };
+    const trace: TraceEntry[] = [
+      { tool: "use_held_item", input: {}, ok: true, text: "", preWindow: null, postWindow: "服务器菜单", preHeld: "compass" },
+    ];
+    const r = reviewStrategy(compass, { instruction: "用指南针开菜单", owner: "Steve", trace }, config);
+    assert.ok(r.ok, r.ok ? "" : r.reason);
+    if (r.ok) assert.deepEqual(r.candidate.steps[0]!.input, { item: "compass" });
+    // A model that already wrote the item explicitly is accepted too.
+    const explicit = { ...compass, steps: [{ tool: "use_held_item", input_json: '{"item":"compass"}' }] };
+    assert.ok(reviewStrategy(explicit, { instruction: "用指南针开菜单", owner: "Steve", trace }, config).ok);
+    const wrongItem = { ...compass, steps: [{ tool: "use_held_item", input_json: '{"item":"clock"}' }] };
+    assert.ok(!reviewStrategy(wrongItem, { instruction: "用指南针开菜单", owner: "Steve", trace }, config).ok);
+  });
+});

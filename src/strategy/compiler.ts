@@ -5,7 +5,7 @@ import { normalizeName } from "../bot/text.js";
 import type { LlmClient } from "../brain/llm.js";
 import type { Config } from "../config.js";
 import { checkCommand } from "../safety/commands.js";
-import { POST_WINDOW_TOOLS, PRE_WINDOW_TOOLS, type StepCheck } from "./checks.js";
+import { DIMENSION_TOOLS, POST_WINDOW_TOOLS, PRE_WINDOW_TOOLS, TELEPORT_TOOLS, type StepCheck } from "./checks.js";
 import type { Strategy } from "./library.js";
 import { compileTrigger, instantiate, matchTrigger, type ParamSpec, type StrategyStep } from "./matcher.js";
 
@@ -19,6 +19,10 @@ export interface TraceEntry {
   /** Title of the open window right before / after this call (null = none open). Recorded by code. */
   preWindow?: string | null;
   postWindow?: string | null;
+  /** Dimension before the call, whether the call teleported the bot, and what it was holding. */
+  preDimension?: string;
+  moved?: boolean;
+  preHeld?: string | null;
 }
 
 /** Tools that only look at things; a strategy may drop them, and they alone are not worth learning. */
@@ -119,6 +123,9 @@ function sameStep(step: StrategyStep, done: TraceEntry): boolean {
       button(step.input) === button(done.input)
     );
   }
+  if (step.tool === "use_held_item" && typeof step.input.item === "string" && !done.input.item) {
+    return done.preHeld === step.input.item;
+  }
   return canonical(step.tool, step.input) === canonical(done.tool, done.input);
 }
 
@@ -193,7 +200,12 @@ export function reviewStrategy(
     const check: StepCheck = {};
     if (PRE_WINDOW_TOOLS.has(step.tool) && seen.preWindow !== undefined) check.preWindow = seen.preWindow;
     if (POST_WINDOW_TOOLS.has(step.tool) && seen.postWindow !== undefined) check.postWindow = seen.postWindow;
+    if (DIMENSION_TOOLS.has(step.tool) && seen.preDimension) check.preDimension = seen.preDimension;
+    if (TELEPORT_TOOLS.has(step.tool) && seen.moved) check.postMoved = true;
     if (Object.keys(check).length) step.check = check;
+    // Right-clicking "whatever is in hand" only works if the same thing is in hand: make the
+    // strategy take it out first (like clicking menu buttons by name instead of slot number).
+    if (step.tool === "use_held_item" && !step.input.item && seen.preHeld) step.input = { ...step.input, item: seen.preHeld };
   });
   // Expected effect: items that went up during the task. A value that came from a param becomes
   // "{param}", so "砍三个白桦木" later expects birch_log, not oak_log.

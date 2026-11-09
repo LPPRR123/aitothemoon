@@ -32,7 +32,12 @@ export const StrategySchema = z.object({
         tool: z.string(),
         input: z.record(z.string(), z.unknown()),
         check: z
-          .object({ preWindow: z.string().nullable().optional(), postWindow: z.string().nullable().optional() })
+          .object({
+            preWindow: z.string().nullable().optional(),
+            postWindow: z.string().nullable().optional(),
+            preDimension: z.string().optional(),
+            postMoved: z.boolean().optional(),
+          })
           .optional(),
       }),
     )

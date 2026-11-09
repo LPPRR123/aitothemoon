@@ -6,6 +6,12 @@ description: Simulates server GUI menus and NPC menus for bot testing
 commands:
   menu:
     description: Open the test server menu
+  home:
+    description: Teleport home (fixed point near spawn, for testing)
+  testcooldown:
+    description: Make /home refuse like a teleport cooldown
+    usage: /testcooldown <on|off>
+    permission: testmenus.admin
   menutitle:
     description: Change the main menu title (simulates a server changing its menus)
     usage: /menutitle <title>
