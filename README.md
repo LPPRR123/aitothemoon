@@ -147,4 +147,5 @@ src/
 scripts/                 端到端测试、测试服安装脚本
 tools/testmenus/         测试用的菜单插件（源码 + jar）
 docs/PLAN.md             总体规划
+docs/WORLDGEN-LOOP.md    AI 改地形数据包的闭环：实现说明（还没实现）
 ```
