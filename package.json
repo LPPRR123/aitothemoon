@@ -20,7 +20,8 @@
     "worldgen:round": "tsx scripts/worldgen/round.ts",
     "worldgen:verify": "tsx scripts/worldgen/verify.ts",
     "worldgen:play": "tsx scripts/worldgen/play.ts",
-    "worldgen:analyze": "tsx scripts/worldgen/analyze.ts"
+    "worldgen:analyze": "tsx scripts/worldgen/analyze.ts",
+    "worldgen:build-structures": "tsx scripts/worldgen/structures/crystal-grove.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
