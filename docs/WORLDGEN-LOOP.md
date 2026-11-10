@@ -1,17 +1,17 @@
-# AI 改地形数据包的闭环：实现说明
+# AI 改地形数据包的闭环
 
-> 给 Cursor（或任何写代码的 AI）的实现说明。目标版本：Java 版 **1.20.4**，服务端 **Paper 1.20.4**。
-> 这份说明只讲"怎么搭这条流水线"，不讲具体地形怎么调。
+> 状态（2026-11-10）：**已实现**，在 Paper 1.20.4 上端到端跑通。
+> 目标版本：Java 版 **1.20.4**。给 AI 的规则在 [worldgen/AI_RULES.md](../worldgen/AI_RULES.md)。
 
-## 0. 要做成什么样
+## 0. 这是什么
 
-AI 改世界生成数据包（JSON）→ 用**真实的 Paper 1.20.4 测试服**生成一块区域 → 导出方块、高度、群系 → 画成图、算出数字 → AI 对照验收标准再改。一轮几分钟，全程不用人点。
+AI 改世界生成数据包（JSON）→ 用**真实的 Paper 1.20.4 测试服**生成一块区域 → 导出方块、高度、群系 → 画成图、算出数字 → AI 对照验收标准再改。一轮一两分钟，全程不用人点。
 
 ```mermaid
 flowchart LR
     A["AI 改 worldgen/datapack"] --> B["删旧世界<br/>放数据包、固定种子"]
     B --> C["启动 Paper 1.20.4"]
-    C --> D["Chunky 生成 1000×1000"]
+    C --> D["生成 1000×1000<br/>（有 Chunky 用 Chunky）"]
     D --> E["WgExport 插件导出<br/>高度 / 地表方块 / 群系 / 剖面"]
     E --> F["关服"]
     F --> G["画图 + 算指标<br/>对照 targets.yaml"]
@@ -21,325 +21,254 @@ flowchart LR
     P --> A
 ```
 
-**为什么不用第三方渲染器/仿真器**：很多工具不支持 1.20.4，而且仿出来的和游戏实际生成的不一定一样。直接用真服务端跑，AI 看到的就是玩家会看到的。
+不用第三方渲染器或仿真器：很多工具不支持 1.20.4，而且仿出来的和游戏实际生成的不一定一样。直接用真服务端跑，AI 看到的就是玩家会看到的。
 
 ---
 
-## 1. 目录和命令
+## 1. 怎么用
+
+需要 Node.js 22 和 Java 17 或更新的版本（改插件源码才需要 JDK，只用的话 JRE 就够）。
+
+```bash
+npm install
+npm run worldgen:setup      # 只需要一次：下载 Paper 1.20.4、Chunky，生成原版参考文件
+npm run worldgen:round      # 跑一轮
+```
+
+| 命令 | 作用 |
+|---|---|
+| `npm run worldgen:setup` | 准备 `worldgen-server/`（Paper 1.20.4 + Chunky + WgExport 插件）和 `worldgen/vanilla/`（原版 worldgen JSON）。可以重复运行 |
+| `npm run worldgen:round` | 用 `targets.yaml` 里的主种子跑一轮，输出到 `worldgen/runs/NNNN-s种子/` |
+| `npm run worldgen:round -- --seed 42` | 换一个种子跑一轮 |
+| `npm run worldgen:round -- --keep-world` | 另外把生成的世界存一份到这一轮的文件夹里 |
+| `npm run worldgen:verify` | 用 `verify_seeds` 里每个种子各跑一轮，汇总成一张表（`worldgen/runs/verify-latest.md`） |
+| `npm run worldgen:analyze -- --run 12` | 不重新生成，按现在的 `targets.yaml` 重新算第 12 轮的数字、图和报告（改了区域、道路、检查项之后用） |
+| `npm run worldgen:play -- --run 12` | 用第 12 轮的数据包和种子重新生成世界并开服，人进去看 |
+| `npm run worldgen:build-plugin` | 改了 `tools/wgexport` 的源码后重新编译插件 |
+
+`worldgen:round` 的退出码：0 = 检查全过；1 = 跑完了但有检查没过；2 = 没跑成（原因会打印出来）。
+
+可以用环境变量调整：`WG_XMX`（服务端内存，默认 `4G`）、`WG_TIMEOUT_MIN`（一轮的超时，默认 15 分钟）、`JAVA`（java 的路径）。
+
+**让 AI 开始干活**：在 Cursor 里打开这个仓库，告诉它"按 `worldgen/AI_RULES.md` 做，目标在 `worldgen/targets.yaml`"。仓库里的 `.cursor/rules/worldgen.mdc` 会在它碰 `worldgen/` 下的文件时自动提醒这些规则。开始之前，你要先把 `worldgen/targets.yaml` 改成自己想要的地形（现在里面是一份示例）。
+
+### 目录
 
 ```
 worldgen/
 ├─ targets.yaml        验收标准（人写，AI 不能改）
 ├─ feedback.md         人进游戏后的反馈（人写，AI 每轮必读）
-├─ log.md              每轮一行：改了什么、为什么、关键数字变化（AI 写，进 git）
-├─ AI_RULES.md         给 AI 的规则（第 7 节的内容，放进 Cursor rules）
-├─ datapack/           AI 改的数据包，就是这个文件夹整个拷进世界
-│  ├─ pack.mcmeta
-│  └─ data/minecraft/...
-├─ vanilla/            原版 1.20.4 的 worldgen JSON，只读参考（脚本生成，不进 git）
+├─ log.md              每轮一条：改了什么、为什么、结果如何（AI 写）
+├─ AI_RULES.md         给 AI 的规则
+├─ rounds.jsonl        每轮一行的记录（脚本写，用来编号和数"几轮没人看了"）
+├─ datapack/           AI 改的数据包，整个文件夹会被拷进世界
+├─ vanilla/            原版 1.20.4 的 worldgen JSON，只读参考（setup 生成，不进 git）
 └─ runs/               每轮输出（不进 git）
-   ├─ 0001-s20261109/  第几轮-种子
+   ├─ 0001-s20261109/
+   │  ├─ report.md  metrics.json  server.log
+   │  ├─ overview.png  height.png  biome.png  surface.png  slope.png
+   │  ├─ section-<名字>.png  diff-height.png
    │  ├─ meta.json  columns.bin  palette.json  sections/*.bin   ← 插件导出的原始数据
-   │  ├─ biome.png  height.png  surface.png  slope.png  overview.png  section-*.png
-   │  ├─ diff-height.png     和上一轮的高度差
-   │  ├─ metrics.json  report.md  server.log
-   │  └─ datapack.zip        这一轮用的数据包快照
-   └─ latest -> 0001-s20261109
-tools/wgexport/        导出插件（Java 源码 + 编译好的 jar，做法同 tools/testmenus）
-scripts/worldgen/
-├─ setup.ts            准备 worldgen-server/ 和 worldgen/vanilla/
-├─ round.ts            跑一轮（核心）
-├─ verify.ts           换种子验证（跑 targets.yaml 里的 verify_seeds）
-├─ render.ts           原始数据 → PNG
-├─ metrics.ts          原始数据 → metrics.json，对照 targets.yaml
-├─ report.ts           metrics + 上一轮 → report.md
-└─ play.ts             把某一轮的世界开起来给人进去走
+   │  └─ datapack/           这一轮用的数据包的副本
+   └─ latest.txt             最新一轮的文件夹名
+worldgen-server/       地形测试服（setup 生成，不进 git），端口 25566
+tools/wgexport/        导出插件（Java 源码 + 编译好的 jar）
+scripts/worldgen/      setup / round / verify / analyze / play，以及画图、算指标、写报告的模块
 ```
 
-`package.json` 加这些命令：
-
-| 命令 | 作用 |
-|---|---|
-| `npm run worldgen:setup` | 下载 Paper 1.20.4、Chunky，拷 WgExport，生成原版参考 JSON |
-| `npm run worldgen:round` | 用 targets.yaml 里的主种子跑一轮，输出到 `worldgen/runs/NNNN-sSEED/` |
-| `npm run worldgen:round -- --seed 42` | 指定种子跑一轮 |
-| `npm run worldgen:verify` | 用 `verify_seeds` 里每个种子各跑一轮，汇总成一张表 |
-| `npm run worldgen:play -- --run 12` | 用第 12 轮的数据包和种子重新生成并开服，人进去看 |
-
-PNG 用 `pngjs`（纯 JS，Windows 也能直接用），YAML 用项目里已有的 `yaml`。
-
-**注意**：不要复用机器人的 `test-server/`，那个是超平坦世界。地形测试服单独放在 `worldgen-server/`（加进 `.gitignore`），端口用 25566，两个可以同时跑。
+地形测试服和机器人用的 `test-server/`（超平坦世界，端口 25565）是分开的，可以同时开。
 
 ---
 
-## 2. 第 1 步：准备测试服（`setup.ts`）
+## 2. 一轮里发生了什么（`scripts/worldgen/round.ts`）
 
-1. 下载 Paper 1.20.4 最新构建，做法照抄 `scripts/setup-test-server.ts`（PaperMC fill v3 接口 + sha256 校验）。
-2. 下载 **Chunky**：选 Modrinth / Hangar 上明确标了支持 1.20.4 的版本，**在脚本里写死版本号和 sha256**，不要取"最新"。
-3. 拷 `tools/wgexport/WgExport.jar` 到 `plugins/`。
-4. 写 `server.properties`：
+开服之前先做三项检查，任何一项不过都不开服（退出码 2）：
 
-   ```properties
-   online-mode=false
-   server-port=25566
-   server-ip=127.0.0.1
-   level-type=minecraft\:normal
-   level-seed=（每轮由 round.ts 改写）
-   generate-structures=true
-   allow-nether=false
-   spawn-monsters=false
-   view-distance=4
-   simulation-distance=4
-   max-players=2
-   white-list=true
-   ```
-   `bukkit.yml` 里 `allow-end: false`。不生成下界和末地，开服更快。
+1. **数据包检查**：每个 JSON 都能解析（不能有注释和多余的逗号），`pack_format` 是 26。
+2. **阶段检查**：和上一轮的数据包副本比，这一轮改动的文件必须在当前阶段允许的范围里（`targets.yaml` 的 `stages`）。见第 6 节。
+3. **人工把关**：`feedback.md` 没变的情况下已经跑了 5 轮，就拒绝再跑，提示先进游戏看。见第 7 节。
 
-5. 生成原版参考 JSON 到 `worldgen/vanilla/`。1.20.4 的原版群系、地形设置是写在代码里的，jar 里没有现成 JSON。两种来源，选一个：
-   - **官方数据生成器**（推荐）：下载 Mojang 原版 1.20.4 `server.jar`（不是 Paper），运行
-     `java -DbundlerMainClass=net.minecraft.data.Main -jar server.jar --server --reports --output <临时目录>`，
-     把输出里的 `data/minecraft/worldgen/`、`reports/biome_parameters/`（多噪声群系参数）整理进 `worldgen/vanilla/`。
-     *实现时确认这两个目录在 1.20.4 的输出里实际叫什么。*
-   - 备选：misode/mcmeta 仓库对应 1.20.4 的 data 标签。
+然后：
 
-6. 如果 `worldgen/datapack/` 还不存在，建一个只有 `pack.mcmeta` 的空数据包（1.20.3–1.20.4 的 `pack_format` 是 **26**）。空数据包跑出来就是原版地形，作为第 0 轮基准。
+4. 删掉 `worldgen-server/world`，把数据包拷到 `world/datapacks/aitothemoon-worldgen/`，把种子写进 `server.properties`。数据包必须在世界创建之前放好——世界生成的设置在创建世界时就定了；种子也只在创建世界时生效。所以每轮都是全新的世界。
+5. 写一个任务文件 `wgexport-job.json`，启动服务端。WgExport 插件在服务端加载完成后自动开始：生成 → 导出 → 关服。脚本只需要等进程退出（超时就强制结束）。
+6. **识别失败**。1.20.4 的服务端在数据包有任何 worldgen 错误时会整个拒绝加载（不会悄悄退回原版），但**退出码仍然是 0**，所以脚本自己看日志：找到 `Registry loading errors` / `Failed to load datapacks`，把是哪个文件、什么原因（去掉 Java 堆栈）写进 `report.md`。另外还会确认导出结果里"已启用的数据包"包含我们的包，否则这一轮不算数。
+7. 算指标、画图、写报告，在 `rounds.jsonl` 记一行。
+
+失败的轮次也会占一个编号、留下 `report.md` 和 `server.log`，但不计入"几轮没人看了"。
 
 ---
 
-## 3. 第 2 步：跑一轮（`round.ts`）
+## 3. 导出插件 WgExport（`tools/wgexport`）
 
-按顺序：
+Java 17，只依赖 Paper API。读服务端目录下的 `wgexport-job.json`（区域大小、中心、剖面线、输出目录），服务端启动完成后自动运行；也可以在控制台输入 `wgrun` 手动触发。
 
-1. **检查数据包**：所有 JSON 能解析（不能有注释、不能有尾逗号）；`pack.mcmeta` 的 `pack_format` 是 26。解析失败直接退出，把文件名和错误位置打出来，不开服。
-2. **检查改动范围**（第 6 节"分层做"的硬约束）：用 `git diff` 看 `worldgen/datapack/` 里改了哪些文件，不在当前阶段允许范围里的，拒绝跑并说明（`--force` 可以跳过）。
-3. **检查人工把关**（第 6 节）：距离上次 `feedback.md` 更新已经跑了 5 轮或以上，拒绝跑，提示"请进游戏看看，然后更新 feedback.md"。`--force` 可以跳过，但会写进 `log.md`。
-4. **删世界**：删掉 `worldgen-server/world`（以及 `world_nether`、`world_the_end`，如果有）。
-5. **放数据包**：把 `worldgen/datapack/` 整个拷到 `worldgen-server/world/datapacks/aitothemoon-worldgen/`。**必须在第一次开服之前放好**——世界生成的设置在创建世界时就定了，之后再放数据包，已经生成的区块不会变。
-6. **改种子**：改写 `server.properties` 的 `level-seed`（只在创建世界时生效，所以第 4 步必须删世界）。
-7. **开服**：`java -Xmx4G -jar paper.jar --nogui`，cwd 是 `worldgen-server/`，stdout/stderr 全部写进本轮的 `server.log`。
-8. **识别数据包报错**：1.20.4 数据包有错时，服务端可能直接拒绝加载世界（日志里有 `Failed to load datapacks` 之类，并提示 `--safeMode`），也可能只是跳过某个文件、继续用原版的（日志里会有 `Couldn't parse` / `Failed to parse` 和文件路径）。**两种都算这轮失败**：把相关日志行（前后各几行）整理进 `report.md`，退出码非 0。不要让"悄悄退回原版"的结果被当成正常结果。*实现时用一个故意写错的 JSON 实际跑一次，确认 1.20.4 的报错原文，再写匹配规则。*
-9. **等开服完成**：日志出现 `Done (` 。
-10. **生成 + 导出 + 关服**：控制台输入 `wgrun`（见第 4 节），由插件按顺序做完 Chunky 生成、导出、关服。`round.ts` 只要等进程退出。设一个总超时（默认 15 分钟），超时就杀进程，算失败。
-11. **画图、算指标、写报告**：依次调用 `render.ts`、`metrics.ts`、`report.ts`。
-12. **存快照**：把这一轮的数据包打包成 `datapack.zip`，更新 `runs/latest`（Windows 上建软链接要权限，改成写一个 `runs/latest.txt` 里放目录名也行）。
-13. **世界默认不保留**（1000×1000 的世界有几十到上百 MB）。加 `--keep-world` 时才把 `world/` 拷进本轮目录。
+**生成**：装了 Chunky 就让 Chunky 生成（发 `chunky world / shape / center / radius / start` 这几条命令，然后轮询"区域里的区块是不是都生成了"，不依赖 Chunky 的提示文字；60 秒没进展就自己接手）。没装 Chunky 时，用 Paper 自带的异步区块加载生成，结果一样。setup 会把 Paper 的区块线程数调到和 CPU 核数一样（默认只用一半左右）。
 
-**确定性检查**（做完第 3 节后先跑一次）：同一个数据包、同一个种子连跑两轮，`metrics.json` 必须完全一样、`columns.bin` 的哈希一样。不一样说明流水线有问题（比如导出时区块还没生成完），先修好再往下做。
-
----
-
-## 4. 第 3 步：导出插件 `WgExport`（`tools/wgexport`）
-
-Java 17，Paper API 1.20.4，构建方式照 `tools/testmenus`。只有一个控制台命令：
-
-```
-wgrun [size=1000] [cx=0] [cz=0]
-```
-
-### 4.1 生成
-
-- 用 Chunky 生成以 (cx, cz) 为中心、边长 size + 32 的正方形（多生成 16 格边，保证导出区域边上的树和装饰也放完了）。
-- 推荐用 Chunky 的 API（服务注册里取 `ChunkyAPI`，开任务，注册"生成完成"回调）；如果拿不到 API，退一步：插件在控制台执行 `chunky world world`、`chunky center`、`chunky radius`、`chunky shape square`、`chunky start`，再监听 Chunky 的完成提示。*实现时按所选 Chunky 版本确认 API 和完成提示的原文。*
-- 生成完成后再开始导出。
-
-### 4.2 导出的数据
-
-坐标范围：x ∈ [cx − size/2, cx + size/2)，z 同理，共 size × size 列。
-
-**每列记这些**（`columns.bin`，小端，按 z 行、x 列排列）：
+**每一列导出这些**（`columns.bin`，小端，每列 10 字节，按 z 行、x 列排列）：
 
 | 字段 | 类型 | 含义 |
 |---|---|---|
-| `groundY` | int16 | **地面高度**：从最高的非空气方块往下找，跳过树叶、原木、植物、雪层、所有没有碰撞箱的方块、液体，找到的第一个实心方块的 y |
-| `waterY` | int16 | 地面上方有水时，水面最高的 y；没有水是 −32768 |
+| `groundY` | int16 | **地面高度**：从最高的非空气方块往下找，跳过树叶、原木、植物、雪层、所有没有碰撞箱的方块、水、岩浆、冰、巨型蘑菇、竹子、仙人掌、南瓜、西瓜，找到的第一个实心方块的 y |
+| `waterY` | int16 | 地面上方有水（或冰）时，水面最高的 y；没有水是 −32768 |
 | `topBlock` | uint16 | 从天空往下看到的第一个非空气方块（可能是树叶、雪、水），在 `palette.blocks` 里的下标 |
-| `groundBlock` | uint16 | `groundY` 那个方块的下标（草方块、石头、沙子……） |
-| `biome` | uint16 | 地面高度处的群系，在 `palette.biomes` 里的下标 |
+| `groundBlock` | uint16 | `groundY` 那个方块的下标 |
+| `biome` | uint16 | 地表处的群系，在 `palette.biomes` 里的下标 |
 
-**剖面**（`sections/<名字>.bin`）：按 `targets.yaml` 里的 `sections` 配置，每条线上每一列从 minY 到 maxY 的完整方块（uint16 下标），共 size × 384 个。
+**剖面**（`sections/<名字>.bin`）：每条剖面线上每一列从 y=−64 到 319 的全部方块。
 
-**`palette.json`**：
+**`palette.json`**：方块 ID 和它的地图颜色（Paper 的 `BlockData#getMapColor()`），以及群系 ID 列表。
+**`meta.json`**：种子、范围、版本、用时、已启用的数据包。（里面也有一个海平面，但 1.20.4 的服务端接口不管数据包怎么写都回答 63，所以脚本实际用的海平面是从这一轮的数据包里读的：`noise_settings/overworld.json` 的 `sea_level`，没有这个文件就是 63。）
+**`done.json`**：最后才写，有它才说明导出完整。出错时写 `error.json`。
 
-```json
-{
-  "blocks": [{ "id": "minecraft:grass_block", "color": "#7fb238" }],
-  "biomes": ["minecraft:plains", "aitothemoon:snow_peaks"]
-}
-```
-方块颜色用地图颜色：Paper API 里有 `BlockData#getMapColor()` 就用它；没有的话 color 留空，渲染脚本用自己的颜色表。
+几个实现上的要点：
 
-**`meta.json`**：种子、中心、size、`minY`/`maxY`（−64 / 320）、`seaLevel`（读 `world.getSeaLevel()`，因为数据包可能改了海平面）、Minecraft 和 Paper 版本、数据包的哈希、生成用时、导出用时。
-
-### 4.3 要小心的地方
-
-- **群系名**：1.20.4 的 Bukkit `Biome` 枚举遇到数据包自定义群系只会返回 `CUSTOM`。要拿真实的群系 ID，用 Paper 的 `Bukkit.getUnsafe().getBiomeKey(world, x, y, z)`（返回 NamespacedKey）。*实现时确认这个方法在 1.20.4 Paper 上可用；不可用就退到 NMS。*
-- **线程**：`World` 只能在主线程读。做法：每 tick 处理几个区块，主线程上取 `ChunkSnapshot` 和群系，算地面高度这种纯计算放到异步线程。不要一次在主线程上读完 100 万列，会卡死看门狗。
-- 导出结束后写一个 `done.json`（含行数校验），再执行 `stop`。`round.ts` 看到 `done.json` 才认为导出成功。
+- **群系名**用 `Bukkit.getUnsafe().getBiomeKey(...)` 取。Bukkit 的 `Biome` 枚举遇到数据包自定义群系只会返回 `CUSTOM`，用不了。
+- 区块一加载完就在主线程上读（每个区块的活很少），读完不保留，内存占用是固定的。
+- 方块和群系的编号按名字排序，保证同样的世界导出同样的字节。
+- 村庄之类的建筑是实心方块，会算进地面高度。
 
 ---
 
-## 5. 第 4 步：画图和算指标
+## 4. 图和数字
 
-### 5.1 图（`render.ts`，1 像素 = 1 格）
+### 4.1 图（1 像素 = 1 格）
 
 | 文件 | 内容 |
 |---|---|
-| `height.png` | 高度图：按高度上色 + 山体阴影（西北光源）+ 每 16 格一条等高线；水面用蓝色，按水深调深浅 |
-| `biome.png` | 群系图：原版群系用固定颜色表，自定义群系按名字哈希出颜色；图例写在 `report.md` 里 |
-| `surface.png` | 俯视地表：用 `topBlock` 的地图颜色，接近游戏里地图的样子 |
-| `slope.png` | 坡度分类：平缓 / 陡坡 / 悬崖 三种颜色，水面灰色 |
-| `overview.png` | 上面四张缩到 500×500 拼成 2×2，标上剖面线位置、最大可建平地的方框、`targets.yaml` 里的区域和道路。**AI 主要看这张** |
-| `section-<名字>.png` | 剖面：横轴是沿线位置，纵轴 y（−64 到 320，纵向放大 2 倍），按方块上色，画出海平面线和每 32 格的刻度 |
-| `diff-height.png` | 和上一轮（同种子）的地面高度差：变高红、变低蓝、不变白。用来看"这一处改动到底影响了哪里" |
+| `overview.png` | 下面四张缩小一半拼成 2×2，边上有坐标。白色虚线 = 剖面线，洋红方框 = 最大可建平地，黄色框 = 区域（R1、R2…），青色线 = 道路（C1…）。**AI 主要看这张** |
+| `height.png` | 高度图：按高度上色 + 阴影 + 每 16 格一条等高线；水是蓝色，越深越暗 |
+| `biome.png` | 群系图：原版群系用固定颜色，自定义群系按名字算出一个颜色；颜色对照表在 `report.md` 里 |
+| `surface.png` | 俯视地表：用方块的地图颜色，接近游戏里地图的样子 |
+| `slope.png` | 坡度：绿 = 平缓，黄 = 陡坡，红 = 悬崖，灰蓝 = 水 |
+| `section-<名字>.png` | 剖面：横轴是沿线坐标，纵轴 y（纵向放大 2 倍），洋红虚线是海平面，深色是洞穴 |
+| `diff-height.png` | 和同一个种子的上一轮比，地表高度变高的地方红、变低的地方蓝、没变的白 |
 
-### 5.2 指标（`metrics.ts` → `metrics.json`）
+图里的文字只能显示英文字母和数字，所以区域和道路在图上标成 R1、C1，对应的名字在 `report.md` 的表里。
 
-下面"陆地"指没有被水盖住的列（`waterY` 为空）。"坡度"用一列和上下左右四格的地面高度差的最大值：
+原版地形（空数据包，种子 20261109）跑出来的 `overview.png`：
+
+![overview 示例](images/worldgen-overview.png)
+
+同一轮里 z=−300 的剖面：
+
+![剖面示例](images/worldgen-section.png)
+
+### 4.2 指标（`metrics.json`）
+
+几个词的意思：**陆地** = 上面没有水的列；**地表高度** = 地面高度，有水时取水面；**坡度** = 一列和它上下左右四格的地表高度差里最大的那个。
 
 | 指标 | 定义 |
 |---|---|
-| `ocean_share` | 群系属于 `#minecraft:is_ocean` 的列占比（标签内容从原版参考 JSON 里读） |
-| `water_share` | 被水盖住的列占比（海、河、湖都算） |
+| `ocean_share` | 群系属于 `#minecraft:is_ocean` 的列占比（原版标签 + 数据包里对这个标签的修改） |
 | `river_share` | 群系属于 `#minecraft:is_river` 的列占比 |
-| `land_height` | 陆地地面高度的 p5 / p25 / p50 / p75 / p95 / 最大值，以及每 16 格一档的直方图 |
+| `water_share` / `land_share` | 有水的列 / 陆地的占比（海、河、湖都算水） |
 | `flat_share` | 陆地中坡度 ≤ 1 的占比 |
 | `steep_share` | 陆地中坡度 2–3 的占比 |
 | `cliff_share` | 陆地中坡度 ≥ 4 的占比 |
-| `biome_share` | 每个群系的占比，按占比排序 |
-| `group_share.<组名>` | `targets.yaml` 里自定义的群系组的占比（比如"雪山"） |
-| `largest_flat_square` | 最大的一块"可建平地"正方形的边长和中心：里面每一列都是陆地、高于海平面、坡度 ≤ 1，且整块高差 ≤ 3。用动态规划求最大全 1 正方形 |
-| `largest_landmass_share` | 最大一块连通陆地占全部陆地的比例（防止碎成一堆小岛） |
-| `regions.<名字>.*` | `targets.yaml` 里每个矩形区域内：平地占比、悬崖占比、高差、主要群系 |
-| `corridors.<名字>.*` | 每条道路（折线 + 宽度）沿线：最大单格高差、总爬升、水面占比、最长一段连续陡坡 |
+| `land_height.min / p5 / p25 / p50 / p75 / p95 / max / mean` | 陆地地面高度的分布 |
+| `land_height_histogram` | 陆地高度每 16 格一档的占比 |
+| `relief` | 陆地最高点减最低点 |
+| `biome_share.<群系ID>` | 每个群系的占比（没出现的群系算 0） |
+| `group_share.<组名>` | `targets.yaml` 里 `groups` 定义的群系组的占比 |
+| `top_biome` | 占比最大的群系 |
+| `largest_flat_square.size / x / z / y` | 最大的"可建平地"正方形的边长和中心：里面每一列都是陆地、不低于海平面、坡度 ≤ 1，且整块高差不超过 `flat_square.max_relief`（默认 4） |
+| `largest_landmass_share` | 最大一块连通的陆地占全部陆地的比例（防止碎成一堆小岛） |
+| `regions.<名字>.<…>` | 每个矩形区域单独算一套：上面从 `ocean_share` 到 `top_biome` 的所有指标 |
+| `corridors.<名字>.max_step` | 道路沿线相邻两格的最大高差 |
+| `corridors.<名字>.total_climb / total_descent / relief` | 沿线总爬升、总下降、最高减最低 |
+| `corridors.<名字>.longest_steep_run` | 最长一段连续的陡坡（相邻高差 ≥ 2）有几格 |
+| `corridors.<名字>.max_cross_relief` | 路面宽度方向上的最大高差 |
+| `corridors.<名字>.water_share` | 路面有水的比例 |
+| `points.highest` / `points.steepest` | 最高点、最陡处的坐标（给人进游戏看用） |
 
-### 5.3 报告（`report.ts` → `report.md`）
+道路的高度取路面宽度内的中位数，所以路中间有一棵树或一个小坑不影响结果。
 
-- 第一行：**通过 / 不通过**，几项不通过。
-- 验收表：每项检查的目标、本轮值、上一轮值、变化、是否通过。
-- 关键数字的变化（只列变化超过一定幅度的）。
-- 数据包报错（如果有）。
-- 本轮和上一轮的数据包差异（改了哪些文件）。
-- 群系颜色图例。
+### 4.3 报告（`report.md`）
 
----
+第一行是结论（通过，或者哪几项没达标）。后面依次是：验收表（目标、本轮、上一轮、变化、结果）、关键数字和变化、陆地高度分布、群系占比、区域和道路的表、值得进游戏看的地方（现成的 `/tp` 指令）、图的说明、数据包和上一轮的文件差别。
 
-## 6. 第 5 步：验收标准 `targets.yaml`
-
-人来写，AI 只读。示例：
-
-```yaml
-# 用人话写下想要什么，AI 改之前要读
-goal: |
-  一块以温带平原为主的大陆，北边是一整片雪山。
-  中部有一条东西向的主路，地势平缓，能在路边放下主城。
-  海不要太多，但南边要有海岸线。
-
-seed: 20261109              # 日常迭代用这一个种子
-verify_seeds: [1, 42, 777]  # 定稿前换种子验证
-area: { center: [0, 0], size: 1000 }
-current_stage: 1            # 当前在第几阶段，见下面 stages
-
-stages:
-  1: { name: 大地形, allow: ["data/minecraft/worldgen/noise_settings/", "data/minecraft/worldgen/density_function/", "data/minecraft/worldgen/noise/"] }
-  2: { name: 地表方块, allow: ["data/minecraft/worldgen/noise_settings/overworld.json"] }   # 只改 surface_rule
-  3: { name: 群系, allow: ["data/minecraft/dimension/", "data/minecraft/worldgen/biome/", "data/aitothemoon/worldgen/biome/"] }
-  4: { name: 树和装饰, allow: ["data/minecraft/worldgen/biome/", "data/minecraft/worldgen/configured_feature/", "data/minecraft/worldgen/placed_feature/", "data/aitothemoon/"] }
-
-sections:
-  - { name: z0,   axis: x, at: 0 }      # z=0 这条线，沿 x 方向
-  - { name: zN,   axis: x, at: -300 }
-  - { name: x0,   axis: z, at: 0 }
-  - { name: city, axis: x, at: 40 }     # 穿过主城预定位置
-
-groups:
-  雪山: [minecraft:snowy_slopes, minecraft:frozen_peaks, minecraft:jagged_peaks, minecraft:grove]
-
-regions:
-  north:    { x: [-500, 500], z: [-500, -200] }
-  城址:     { x: [-60, 140], z: [-60, 140] }
-
-corridors:
-  主路: { points: [[-480, 20], [0, 20], [480, 20]], width: 9 }
-
-checks:   # stage 表示从第几阶段开始检查
-  - { name: 海洋不要太多,   metric: ocean_share,                     max: 0.20,             stage: 1 }
-  - { name: 有海岸线,       metric: ocean_share,                     min: 0.05,             stage: 1 }
-  - { name: 不要碎成小岛,   metric: largest_landmass_share,          min: 0.85,             stage: 1 }
-  - { name: 主城放得下,     metric: largest_flat_square.size,        min: 96,               stage: 1 }
-  - { name: 城址平整,       metric: regions.城址.flat_share,         min: 0.70,             stage: 1 }
-  - { name: 主路够平,       metric: corridors.主路.max_step,         max: 2,                stage: 1 }
-  - { name: 也别全是平地,   metric: flat_share,                      min: 0.35, max: 0.65,  stage: 1 }
-  - { name: 要有像样的山,   metric: land_height.p95,                 min: 150,              stage: 1 }
-  - { name: 雪山占三成,     metric: group_share.雪山,                min: 0.25, max: 0.35,  stage: 3 }
-  - { name: 雪山在北边,     metric: regions.north.group_share.雪山,  min: 0.70,             stage: 3 }
-```
-
-写标准时注意：**能加上限的都加上限**（比如平地比例 0.35–0.65），不然 AI 最省事的办法就是把整个世界压平。
+"上一轮"指同一个种子上一次成功的那一轮。
 
 ---
 
-## 7. 给 AI 的规则（写进 `worldgen/AI_RULES.md`，并放进 Cursor rules）
+## 5. 验收标准 `targets.yaml`
 
-每一轮 AI 按这个顺序做：
+人来写，AI 只读。仓库里的 [worldgen/targets.yaml](../worldgen/targets.yaml) 是一份带注释的示例，里面有：
 
-1. 读 `targets.yaml`（尤其 `goal` 和 `current_stage`）、`feedback.md`、`log.md` 最近 10 轮、上一轮的 `report.md` 和 `overview.png`，需要时再看剖面图。
-2. **先写假设再动手**：在 `log.md` 新起一行，写"改什么、为什么、预计哪个数字往哪边变、图上哪里会变"。
-3. **一轮只改一件事**，只改当前阶段允许的文件。前面阶段已经定好的东西不动。
-4. `npm run worldgen:round`。
-5. 对照假设看结果：预计的变化有没有发生？有没有意外的副作用（看 `diff-height.png`）？把实际结果补进 `log.md` 那一行。
-6. 结果变差就回退这次改动（数据包在 git 里，`git checkout` 即可），在 `log.md` 记下"这条路不行"，换一个思路。
-7. 当前阶段的检查全部通过后，跑 `npm run worldgen:verify`。所有验证种子都通过（或者偏差在可接受范围内）才算这个阶段完成；然后停下来，等人确认后再把 `current_stage` 加 1（这个数字由人改）。
+- `goal`：用人话写想要什么。
+- `seed` / `verify_seeds`：日常用的种子、定稿前验证用的种子。
+- `area`：测试区域的中心和边长。
+- `current_stage` / `stages`：分层做的阶段，见第 6 节。
+- `sections`：剖面线。
+- `groups`：群系组，比如把四种雪山群系合成"雪山"。
+- `regions` / `corridors`：单独算数字的矩形区域和道路。
+- `checks`：检查项，每项是"某个指标 ≥ / ≤ 某个值"，`stage` 表示从第几阶段开始算数。
 
-不能做的事：
-
-- 不能改 `targets.yaml`、`feedback.md`、`scripts/worldgen/` 里的指标算法、WgExport 插件。数字不达标只能改数据包。
-- 不能只盯着数字。数字是底线，不是目标。`goal` 里写的感觉、`feedback.md` 里人说的话，优先级高于"再多 2% 平地"。
-- 遇到 `round.ts` 因为"该人工把关了"拒绝运行，就停下来，告诉人该看哪几处（坐标见 `report.md`），不要用 `--force` 绕过。
-- 一个种子好看不算数，定稿前必须换种子验证。
+写标准时注意：**能加上限的都加上限**（比如平地比例 35%–70%），不然 AI 最省事的办法就是把整个世界压平。只写"好看"的话，AI 没法稳定判断，要写成"雪山占 25%–35%""主路沿线每格高差 ≤ 3"这样能量出来的话。
 
 ---
 
-## 8. 人工把关（`play.ts`）
+## 6. 几条规则，都由脚本强制执行
 
-俯视图和剖面图只能看布局，看不出玩家站在地上的感觉。所以每 5 轮左右，人要进游戏走一圈。
+**分层做。** 先定大地形，再做地表方块、群系、树和装饰。一次全改，就不知道是哪项改动造成的变化。`targets.yaml` 的 `stages` 给每个阶段列出能改的文件（还可以用 `only_keys` 限制到文件里的某几个字段，比如第 2 阶段只能改 `overworld.json` 的 `surface_rule`）。改了别的，这一轮不跑。进入下一阶段要人来改 `current_stage`。
 
-- `npm run worldgen:play -- --run 12`：用第 12 轮的数据包和种子重新生成（流程同 `round.ts`，但不关服），开服后打印出：
-  - 连接地址 `127.0.0.1:25566`（只监听本机，别把这个端口开到公网）；
-  - 几个值得看的地方的 `/tp` 指令：最大可建平地中心、最高峰、最陡的悬崖、每条剖面线的中点、每个 `regions` 的中心、主路的起点和终点。
-- 先在控制台 `whitelist add <你的名字>`、`op <你的名字>`，进去后可以 `/gamemode spectator` 飞着看，再切生存走一走。
-- 看完写进 `feedback.md`，越具体越好，比如"城址南边那道坎太硬了，走路得跳三次""雪山从远处看像一堵墙，没有层次"。写了 `feedback.md`，`round.ts` 的 5 轮计数就清零。
-- 遇到满意的一轮，在 `feedback.md` 里写"参考轮：12"。之后 AI 改的时候要拿参考轮的图对比，别越改越偏。
+**换种子验证。** 一个种子好看可能只是运气。`npm run worldgen:verify` 用 3 个种子各跑一轮，全部通过才算这个阶段完成。
 
-**最大的风险**是 AI 把数字越调越达标，地形却越来越没意思。所以 `feedback.md` 的优先级高于 `targets.yaml` 的数字，最终拍板的是人。
+**先写假设。** AI 每轮动手前在 `log.md` 写下"改什么、预计哪个数字怎么变"，跑完对照。配合 `diff-height.png`，能看清每次改动到底影响了哪里。
+
+**同样的输入，结果基本一样，但不是一模一样。** 同一个数据包、同一个种子跑两次：群系完全一样；地形只有极少数位置不同（实测 100 万列里不到 200 列）；树叶、花草这类顶层方块大约 2% 的位置不同。原因是 Minecraft 多线程生成时，相邻区块放装饰的先后顺序不固定。实测两次的指标只在小数点后第 4 位有差别，所以占比类的数字差 0.1 个百分点以内当作没变（报告里也是这样显示的）。把区块线程数降到 1 可以把这种差异再缩小几十倍，但仍然不是零，而且慢 3 倍，所以没有这么做。
 
 ---
 
-## 9. 实现顺序（每一步做完都要能跑）
+## 7. 人工把关
 
-| 步骤 | 内容 | 做完的标准 |
-|---|---|---|
-| M1 | `setup.ts` + `round.ts` 的开服、关服、删世界、放数据包、改种子、报错识别（先不导出，Chunky 用控制台命令） | 空数据包能跑完一轮；故意写错一个 JSON，`report.md` 里能看到报错原文，退出码非 0 |
-| M2 | WgExport 插件：`wgrun`、导出、`done.json` | 导出的 `columns.bin` 大小 = size² × 10 字节；同一种子连跑两次哈希一样 |
-| M3 | `render.ts` | 原版地形跑出来的 `surface.png` 和游戏里的地图看起来一致；剖面图上能看到海平面和山体 |
-| M4 | `metrics.ts` + `targets.yaml` + `report.ts` | 指标有单元测试（用手造的小数组：一块平地、一道悬崖、一片海，结果对得上）；报告里有上一轮对比 |
-| M5 | 改动范围检查、5 轮人工把关、`verify.ts`、`play.ts` | 改了不允许的文件会被拒绝；第 6 轮不写 feedback 会被拒绝；三个种子能出汇总表 |
-| M6 | `AI_RULES.md` + Cursor rules | 让 AI 从原版开始，按规则跑 3 轮，`log.md` 里每轮都有假设和结果 |
+俯视图和剖面图只能看布局，看不出玩家站在地上的感觉。所以每 5 轮（`human_check_every`）必须有人进游戏走一圈，不然脚本拒绝继续跑。
 
-单元测试放 `test/worldgen-*.test.ts`，沿用 `npm test`。M1–M5 的端到端跑一次大约几分钟，不放进 `npm test`。
+1. `npm run worldgen:play -- --run 12`：用第 12 轮的数据包和种子重新生成世界，开服并保持运行。窗口里会打印值得看的地方的 `/tp` 指令（最大平地、最高点、最陡处、每个区域的中心、道路两端、剖面线中点）。
+2. 用 1.20.4 客户端连 `127.0.0.1:25566`。服务器只监听本机，别人连不上；进服是创造模式。想飞着看，在开服的窗口里输入 `op <你的名字>`，然后在游戏里 `/gamemode spectator`。
+3. 看完在开服的窗口输入 `stop`。
+4. 把看到的问题写进 `worldgen/feedback.md`，越具体越好。文件内容一变，5 轮的计数就清零。
+5. 遇到满意的一轮，在 `feedback.md` 里写"参考轮：12"，之后 AI 改的时候要拿那一轮的图对比。
+
+**最大的风险是 AI 把数字越调越达标，地形却越来越没意思。** 所以 `feedback.md` 的优先级高于 `targets.yaml` 的数字，AI 不能改验收标准和指标算法，最终拍板的是人。
 
 ---
 
-## 10. 参考：1.20.4 世界生成的文件在哪
+## 8. 实测情况和没验证的部分
 
-AI 改之前先在 `worldgen/vanilla/` 里找到对应的原版文件，复制到 `worldgen/datapack/` 再改，不要从零写。
+在 4 核、Java 21 的 Linux 机器上实际跑过的：
 
-| 想改什么 | 文件 |
+- `npm run worldgen:setup` 从零开始约 25 秒（不含 Chunky）。
+- 1000×1000 的一轮共约 70 秒，其中生成 50 秒（没有 Chunky，4 个区块线程）。
+- 同一个数据包和种子连跑两次，结果的差异见第 6 节。
+- 改了海平面的一轮：报告里的对比、高度差图、数据包差别都正确。
+- 数据包写错的几种情况（JSON 语法错、字段类型错、引用了不存在的东西、装饰写错）服务端都会拒绝加载，脚本能识别并把原因写进报告。
+- 越阶段改文件被拒绝；连续几轮没有反馈被拒绝；`worldgen:verify` 三个种子出汇总表；`worldgen:analyze` 重新分析。
+- `worldgen:play` 开服、生成、打印传送坐标、接受控制台指令、关服；用程序模拟的 1.20.4 客户端能连进去（创造模式）。
+- 单元测试 `test/worldgen.test.ts`（`npm test`）用手造的小地图验证指标：一块平地、一道悬崖、一片海、一条有台阶的路等。
+
+**没有验证的**：
+
+- **Chunky**。写代码的环境下载不了 Chunky，所以"让 Chunky 生成"这条路没有实际跑过；实际跑过的是没有 Chunky 时的自带生成。Chunky 这条路写得很保守（不依赖它的接口和提示文字，卡住会自动换成自带生成），但第一次在你机器上跑时请留意日志里有没有 `Chunky: n/N chunks` 的进度，以及报告"用时"那一行写的是不是 Chunky。
+- **setup 里下载 Chunky 的那一步**（从 Modrinth 取支持 1.20.4 的最新版并校验）同样没有实际跑通过。下载失败只会提示一句，不影响后面的步骤；也可以手动把 jar 放进 `worldgen-server/plugins/`。
+- **Windows 和 macOS**。脚本没有用到只有 Linux 才有的东西，但只在 Linux 上跑过。
+- **用真正的游戏客户端进服**。只用程序模拟的客户端连过。
+- **让 AI 按规则连续改很多轮**。流水线的每一步都测过，但还没有让 AI 真的从原版开始调出一个达标的地形。
+
+---
+
+## 9. 参考：1.20.4 世界生成的文件在哪
+
+AI 改之前先在 `worldgen/vanilla/` 里找到对应的原版文件，复制到 `worldgen/datapack/` 的同一路径再改，不要从零写。
+
+| 想改什么 | 文件（都在 `data/minecraft/` 下面） |
 |---|---|
 | 海平面、地下含水层、地表方块规则（`surface_rule`）、噪声路由 | `worldgen/noise_settings/overworld.json` |
 | 大陆度、侵蚀度、山脊、地形高低起伏（`offset` / `factor` / `jaggedness` 的样条） | `worldgen/density_function/overworld/*.json` |
 | 各种噪声的频率和振幅 | `worldgen/noise/*.json` |
-| 群系分布（哪种气候参数出哪个群系） | `dimension/overworld.json`：把 `biome_source` 从 `"preset": "minecraft:overworld"` 改成写明每个群系参数的完整列表（原版参数从生成器的 `biome_parameters` 报告里拿） |
+| 群系分布（哪种气候参数出哪个群系） | `dimension/overworld.json`：`biome_source` 里写明每个群系的参数。原版的完整参数表在 `worldgen/vanilla/reports/biome_parameters/minecraft/overworld.json` |
 | 单个群系的颜色、降水、生物、装饰列表 | `worldgen/biome/<名字>.json` |
 | 树、矿、花草等装饰 | `worldgen/configured_feature/`、`worldgen/placed_feature/` |
 
-以上路径都在 `data/minecraft/` 下面；自定义的新群系、新装饰放在 `data/aitothemoon/` 下面。
+自定义的新群系、新装饰放在 `data/aitothemoon/` 下面。原版参考文件是用 Mojang 自带的数据生成器从原版 1.20.4 服务端里导出来的，和游戏内置的完全一致。

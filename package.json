@@ -14,7 +14,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "smoke": "tsx scripts/smoke.ts",
-    "test-server:setup": "tsx scripts/setup-test-server.ts"
+    "test-server:setup": "tsx scripts/setup-test-server.ts",
+    "worldgen:setup": "tsx scripts/worldgen/setup.ts",
+    "worldgen:build-plugin": "tsx scripts/worldgen/build-plugin.ts",
+    "worldgen:round": "tsx scripts/worldgen/round.ts",
+    "worldgen:verify": "tsx scripts/worldgen/verify.ts",
+    "worldgen:play": "tsx scripts/worldgen/play.ts",
+    "worldgen:analyze": "tsx scripts/worldgen/analyze.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
@@ -22,6 +28,7 @@
     "mineflayer": "^4.39.0",
     "mineflayer-collectblock": "^1.6.0",
     "mineflayer-pathfinder": "^2.4.5",
+    "pngjs": "^7.0.0",
     "prismarine-chat": "^1.13.0",
     "prismarine-nbt": "^2.8.0",
     "vec3": "^0.1.10",
@@ -30,6 +37,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
+    "@types/pngjs": "^6.0.5",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }
