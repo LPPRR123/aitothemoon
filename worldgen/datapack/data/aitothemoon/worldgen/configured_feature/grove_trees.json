@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:random_selector",
+  "config": {
+    "default": "aitothemoon:wisteria_tree_checked",
+    "features": [
+      {
+        "chance": 0.25,
+        "feature": "aitothemoon:elder_tree_checked"
+      }
+    ]
+  }
+}

@@ -1,0 +1,95 @@
+# 验收标准。这个文件由人来写，AI 只能读，不能改。
+# 下面是一份示例，照着改成你自己想要的地形。
+
+# 用人话写下想要什么，AI 每轮改之前都要读。
+goal: |
+  一块以温带平原和森林为主的大陆，要有像样的山，但不要到处都是山。
+  中部有一条东西向的主路，地势平缓，路边能放下主城。
+  海不要太多，但要有一点海岸线。
+
+seed: 20261109              # 日常迭代只用这一个种子
+verify_seeds: [1, 42, 777]  # 定稿前换种子验证
+area: { center: [0, 0], size: 1000 }   # 测试区域：以 (0, 0) 为中心的 1000×1000 格
+
+current_stage: 1            # 现在在第几阶段。只有人能改这个数字
+human_check_every: 5        # 连续跑这么多轮没更新 feedback.md，就停下来等人进游戏看
+
+# 不算地面的方块。树叶、原木、植物本来就不算；数据包里用别的方块做装饰时
+# （树冠里的发光方块、水晶柱……）要在这里列出来，不然它们会被当成地形，高度和坡度就不准了。
+not_ground:
+  - minecraft:pearlescent_froglight   # 紫晶林树冠里的灯
+  - minecraft:amethyst_block          # 紫晶林的水晶柱
+  - minecraft:amethyst_cluster
+  - minecraft:small_amethyst_bud
+  - minecraft:medium_amethyst_bud
+  - minecraft:large_amethyst_bud
+
+# "最大可建平地"允许的整块高差（格）
+flat_square: { max_relief: 4 }
+
+# 分层做：每个阶段只能改列出来的文件（路径相对 worldgen/datapack/）。
+# only_keys：这个文件在这一阶段只能改这几个顶层字段。
+stages:
+  1:
+    name: 大地形
+    allow:
+      - data/minecraft/worldgen/noise_settings/
+      - data/minecraft/worldgen/density_function/
+      - data/minecraft/worldgen/noise/
+  2:
+    name: 地表方块
+    allow:
+      - data/minecraft/worldgen/noise_settings/overworld.json
+    only_keys:
+      data/minecraft/worldgen/noise_settings/overworld.json: [surface_rule]
+  3:
+    name: 群系
+    allow:
+      - data/minecraft/dimension/
+      - data/minecraft/worldgen/biome/
+      - data/minecraft/tags/worldgen/biome/
+      - data/aitothemoon/worldgen/biome/
+  4:
+    name: 树和装饰
+    allow:
+      - data/minecraft/worldgen/biome/
+      - data/minecraft/worldgen/configured_feature/
+      - data/minecraft/worldgen/placed_feature/
+      - data/aitothemoon/
+
+# 剖面线。axis: x 表示沿 x 方向切（z 固定为 at）；axis: z 表示沿 z 方向切（x 固定为 at）。
+# name 只能用英文字母、数字、- 和 _。
+sections:
+  - { name: z0, axis: x, at: 0 }
+  - { name: zN300, axis: x, at: -300 }
+  - { name: x0, axis: z, at: 0 }
+  - { name: city, axis: x, at: 40 }
+
+# 群系组：把几个群系合起来算占比。
+groups:
+  雪山: [minecraft:snowy_slopes, minecraft:frozen_peaks, minecraft:jagged_peaks, minecraft:grove]
+
+# 矩形区域：x、z 各写 [从, 到)。每个区域会单独算一套数字。
+regions:
+  north: { x: [-500, 500], z: [-500, -200] }
+  城址: { x: [-60, 140], z: [-60, 140] }
+
+# 道路：一条折线加宽度。会沿线算最大单格高差、总爬升等。
+corridors:
+  主路: { points: [[-480, 20], [0, 20], [480, 20]], width: 9 }
+
+# 检查项。stage 表示从第几阶段开始算数；能加上限的都加上限，
+# 不然最省事的办法就是把整个世界压平。
+# 全部指标名见 docs/WORLDGEN-LOOP.md 第 4.2 节，或者任何一轮的 metrics.json。
+checks:
+  - { name: 海洋不要太多, metric: ocean_share, max: 0.20, stage: 1 }
+  - { name: 有海岸线, metric: ocean_share, min: 0.03, stage: 1 }
+  - { name: 不要碎成小岛, metric: largest_landmass_share, min: 0.85, stage: 1 }
+  - { name: 主城放得下, metric: largest_flat_square.size, min: 64, stage: 1 }
+  - { name: 城址平整, metric: regions.城址.flat_share, min: 0.70, stage: 1 }
+  - { name: 主路没有大坎, metric: corridors.主路.max_step, max: 3, stage: 1 }
+  - { name: 主路不泡水, metric: corridors.主路.water_share, max: 0.10, stage: 1 }
+  - { name: 也别全是平地, metric: flat_share, min: 0.35, max: 0.70, stage: 1 }
+  - { name: 要有像样的山, metric: land_height.p95, min: 120, stage: 1 }
+  - { name: 雪山占三成, metric: group_share.雪山, min: 0.25, max: 0.35, stage: 3 }
+  - { name: 雪山在北边, metric: regions.north.group_share.雪山, min: 0.70, stage: 3 }

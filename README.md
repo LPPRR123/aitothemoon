@@ -131,6 +131,17 @@ npm run smoke          # 端到端测试：需要测试服在运行，且账号 
 
 `npm run smoke` 不需要 API Key：它用一个按剧本出牌的假模型（`scripts/scripted-llm.ts`）代替 Claude，测试的是真实的聊天 → 决策循环 → 工具 → 游戏这条链路，以及"学会 → 不调用 AI 直接复用 → 失败交给 AI"这个学习闭环。
 
+## 另一个工具：让 AI 改地形数据包
+
+仓库里还有一套和机器人无关的流水线，用来让 AI 反复改 1.20.4 的世界生成数据包：改 JSON → 用真实的 Paper 1.20.4 测试服生成一块 1000×1000 的区域 → 导出成俯视图、剖面图和数字（海洋占比、高度分布、平地和悬崖比例……）→ 对照你写的验收标准再改。一轮一两分钟。
+
+```bash
+npm run worldgen:setup   # 只需要一次
+npm run worldgen:round   # 跑一轮，结果在 worldgen/runs/ 里
+```
+
+用法、指标定义和规则见 [docs/WORLDGEN-LOOP.md](docs/WORLDGEN-LOOP.md)。
+
 ## 项目结构
 
 ```
@@ -161,6 +172,10 @@ src/
 scripts/                 端到端测试、测试服安装脚本
 tools/testmenus/         测试用的菜单插件（源码 + jar）
 docs/PLAN.md             总体规划
+docs/WORLDGEN-LOOP.md    AI 改地形数据包的闭环：怎么用、怎么工作
+scripts/worldgen/        地形闭环的脚本：准备测试服、跑一轮、画图、算指标、写报告
+tools/wgexport/          地形导出插件（源码 + jar）
+worldgen/                地形数据包、验收标准、人工反馈、给 AI 的规则
 ```
 
 ## 致谢

@@ -1,0 +1,14 @@
+name: WgExport
+version: 1.0.0
+main: dev.aitothemoon.wgexport.WgExport
+api-version: '1.20'
+softdepend: [Chunky]
+description: Generates a square test area and exports heights, surface blocks, biomes and cross sections
+commands:
+  wgrun:
+    description: Generate and export the area described in wgexport-job.json (console only)
+    usage: /wgrun
+    permission: wgexport.admin
+permissions:
+  wgexport.admin:
+    default: op

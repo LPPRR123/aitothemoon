@@ -1,0 +1,14 @@
+---
+description: 改 Minecraft 世界生成数据包（worldgen/datapack）时必须遵守的流程和限制
+globs: worldgen/**
+alwaysApply: false
+---
+
+改 `worldgen/datapack/` 之前，先完整读一遍 `worldgen/AI_RULES.md`，并严格照做。要点：
+
+- 每轮先读 `worldgen/targets.yaml`、`worldgen/feedback.md`、`worldgen/log.md` 和上一轮的 `report.md`、`overview.png`。
+- 先在 `worldgen/log.md` 写假设，再改；一轮只改一件事，只改当前阶段允许的文件。
+- 用 `npm run worldgen:round` 跑；阶段检查全过后用 `npm run worldgen:verify` 换种子验证。
+- 不能改 `worldgen/targets.yaml`、`worldgen/feedback.md`、`worldgen/rounds.jsonl`、`scripts/worldgen/`、`tools/wgexport/`。
+- 不能用 `--force`。脚本要求人工把关时，停下来告诉人。
+- 数字是底线不是目标；`feedback.md` 里人说的话优先。

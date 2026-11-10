@@ -1,0 +1,18 @@
+{
+  "structures": [
+    {
+      "structure": "aitothemoon:sky_isles",
+      "weight": 1
+    }
+  ],
+  "placement": {
+    "type": "minecraft:random_spread",
+    "spacing": 9,
+    "separation": 5,
+    "salt": 40519,
+    "exclusion_zone": {
+      "other_set": "aitothemoon:crystal_spire",
+      "chunk_count": 6
+    }
+  }
+}
