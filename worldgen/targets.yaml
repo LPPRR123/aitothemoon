@@ -14,6 +14,16 @@ area: { center: [0, 0], size: 1000 }   # 测试区域：以 (0, 0) 为中心的 
 current_stage: 1            # 现在在第几阶段。只有人能改这个数字
 human_check_every: 5        # 连续跑这么多轮没更新 feedback.md，就停下来等人进游戏看
 
+# 不算地面的方块。树叶、原木、植物本来就不算；数据包里用别的方块做装饰时
+# （树冠里的发光方块、水晶柱……）要在这里列出来，不然它们会被当成地形，高度和坡度就不准了。
+not_ground:
+  - minecraft:pearlescent_froglight   # 紫晶林树冠里的灯
+  - minecraft:amethyst_block          # 紫晶林的水晶柱
+  - minecraft:amethyst_cluster
+  - minecraft:small_amethyst_bud
+  - minecraft:medium_amethyst_bud
+  - minecraft:large_amethyst_bud
+
 # "最大可建平地"允许的整块高差（格）
 flat_square: { max_relief: 4 }
 
@@ -70,7 +80,7 @@ corridors:
 
 # 检查项。stage 表示从第几阶段开始算数；能加上限的都加上限，
 # 不然最省事的办法就是把整个世界压平。
-# 全部指标名见 docs/WORLDGEN-LOOP.md 第 5.2 节，或者任何一轮的 metrics.json。
+# 全部指标名见 docs/WORLDGEN-LOOP.md 第 4.2 节，或者任何一轮的 metrics.json。
 checks:
   - { name: 海洋不要太多, metric: ocean_share, max: 0.20, stage: 1 }
   - { name: 有海岸线, metric: ocean_share, min: 0.03, stage: 1 }

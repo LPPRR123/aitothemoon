@@ -243,7 +243,7 @@ export async function runRound(opts: RoundOptions): Promise<RoundResult> {
   prepareWorld(DATAPACK_DIR, seed, { whitelist: true });
   writeJob({
     size: targets.area.size, cx: targets.area.center[0], cz: targets.area.center[1],
-    outDir: path.resolve(dir), sections: targets.sections, export: true, stopWhenDone: true,
+    outDir: path.resolve(dir), sections: targets.sections, export: true, stopWhenDone: true, notGround: targets.not_ground,
   });
   const logFile = path.join(dir, "server.log");
   const child = startServer({ logFile });

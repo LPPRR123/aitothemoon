@@ -68,6 +68,7 @@ export interface Job {
   export: boolean;
   stopWhenDone: boolean;
   useChunky?: boolean;
+  notGround?: string[];
 }
 
 export function writeJob(job: Job): void {

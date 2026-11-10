@@ -179,6 +179,15 @@ public final class WgExport extends JavaPlugin implements Listener {
                 isWater[m.ordinal()] = water;
                 isSkipped[m.ordinal()] = skip;
             }
+            // Blocks a data pack uses for decoration (glowing blocks in tree tops, crystal pillars, ...)
+            // would otherwise be taken for terrain. The job can list them.
+            if (j.has("notGround")) {
+                for (JsonElement el : j.getAsJsonArray("notGround")) {
+                    Material m = Material.matchMaterial(el.getAsString());
+                    if (m == null || !m.isBlock()) throw new IllegalArgumentException("notGround: no such block: " + el.getAsString());
+                    isSkipped[m.ordinal()] = true;
+                }
+            }
         }
 
         void start() {

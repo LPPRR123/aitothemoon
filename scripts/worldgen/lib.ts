@@ -32,6 +32,8 @@ const targetsSchema = z.object({
     .default({ center: [0, 0], size: 1000 }),
   current_stage: z.number().int().default(1),
   human_check_every: z.number().int().min(1).default(5),
+  /** Block ids that never count as ground, on top of leaves, logs and plants. */
+  not_ground: z.array(z.string().regex(/^[a-z0-9_.-]+:[a-z0-9_/.-]+$/)).default([]),
   flat_square: z.object({ max_relief: z.number().int().min(0).default(4) }).default({ max_relief: 4 }),
   stages: z
     .record(
