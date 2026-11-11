@@ -6,3 +6,4 @@ data/
 logs/
 test-server/
 *.log
+reports/

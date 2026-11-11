@@ -94,9 +94,15 @@ npm run smoke                # 端到端测试：测试服在跑、账号 Owner 
 - 传送要靠 `forcedMove` 事件识别，不能只看移动距离（走过去也会移动）。
 - 在云端沙箱里 Node 的 `fetch` 要 `NODE_USE_ENV_PROXY=1` 才走代理（主人电脑上不需要）。
 
-## 8. 进行中的任务：用机器人测试 FKFriends 好友插件
+## 8. 用机器人测试 FKFriends 好友插件
 
-**状态：还没拿到插件代码。**
+**状态（2026-11-11）：已完成第一轮。单服 111/111、跨服 28/28 通过。**
+- 单服：`npm run fkfriends-test`（脚本自己启停 `test-server`，需先放入 FKFriends 和 PlaceholderAPI jar）。
+- 跨服：`npm run fkfriends-net-test`，环境在主人电脑 `E:\AI_localtestkfriends-net`（BungeeCord 25577 → Login 25570 / Spawn 25571 / FKCS 25572，Redis 6380，MariaDB 3307）。
+- 共用部分在 `scripts/lib/fkf-harness.ts`；结果写到 `reports/`（不进仓库）。
+- 坑：Paper 用管道当控制台时要加 `-Dterminal.jline=false`，否则重启后控制台不收命令；Bungee 里机器人自己打 `/server` 切不过去，用 Bungee 控制台 `send`。
+
+以下是当初的计划，留作参考：
 - 插件在私有仓库 `LPPRR123/AI_workspace`（本地路径 `E:\git\AI_workspace\source_codes`），本会话的 GitHub 权限覆盖不到，电脑上的文件夹也没有共享给云端会话（Windows 上的 Claude 桌面应用可能需要更新）。
 - 解决办法（任选）：在 https://claude.ai/connect-github 给 Claude 开放 `AI_workspace`；或者在电脑本地开 Claude Code 会话直接读；或者把源码/jar 传进某个能访问的仓库。
 

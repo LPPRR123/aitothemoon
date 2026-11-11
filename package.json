@@ -14,6 +14,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "smoke": "tsx scripts/smoke.ts",
+    "fkfriends-test": "tsx scripts/fkfriends-test.ts",
+    "fkfriends-net-test": "tsx scripts/fkfriends-net-test.ts",
     "test-server:setup": "tsx scripts/setup-test-server.ts"
   },
   "dependencies": {
