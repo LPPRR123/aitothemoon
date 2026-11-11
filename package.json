@@ -16,6 +16,7 @@
     "smoke": "tsx scripts/smoke.ts",
     "fkfriends-test": "tsx scripts/fkfriends-test.ts",
     "fkfriends-net-test": "tsx scripts/fkfriends-net-test.ts",
+    "fkfriends-import-test": "tsx scripts/fkfriends-import-test.ts",
     "test-server:setup": "tsx scripts/setup-test-server.ts"
   },
   "dependencies": {
