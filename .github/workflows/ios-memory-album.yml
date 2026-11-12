@@ -1,0 +1,36 @@
+name: iOS 回忆相册 AR - 编译检查
+
+on:
+  push:
+    paths:
+      - "ios/MemoryAlbumAR/**"
+      - ".github/workflows/ios-memory-album.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode 版本
+        run: xcodebuild -version
+      - name: 编译（模拟器，不签名）
+        working-directory: ios/MemoryAlbumAR
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project MemoryAlbumAR.xcodeproj \
+            -scheme MemoryAlbumAR \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee build.log | grep -E "error|warning: |BUILD|\*\*" || true
+          grep -q "BUILD SUCCEEDED" build.log
+      - name: 失败时上传完整日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: ios/MemoryAlbumAR/build.log

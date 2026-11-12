@@ -7,3 +7,9 @@ logs/
 test-server/
 *.log
 reports/
+
+# Xcode
+xcuserdata/
+DerivedData/
+*.xcuserstate
+build.log
