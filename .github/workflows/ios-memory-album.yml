@@ -7,9 +7,13 @@ on:
       - ".github/workflows/ios-memory-album.yml"
   workflow_dispatch:
 
+concurrency:
+  group: ios-memory-album-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
