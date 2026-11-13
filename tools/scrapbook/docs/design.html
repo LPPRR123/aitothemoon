@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{margin:0}img{max-width:100%}</style>
+</head>
+<body>
+<title>九张登机牌</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=IBM+Plex+Mono:wght@400;500&family=Long+Cang&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+/* 布局：亚麻灰紫底上放一张张"纸"，每节先一句结论，再一张按相册比例画的跨页示意。单一浅色主题，因为这是印刷品的打样。 */
+:root{
+  --linen:#cdc9d6; --linen-deep:#b7b2c3; --paper:#fbfaf7; --ink:#25222b; --ink-soft:#5f5a6b;
+  --line:#dcd8e2; --tape-lav:#b9a8d6; --tape-pink:#e7b4c8; --board:#1c1a21; --board-ink:#f1ead2; --gold:#b9975b;
+  --display:"Barlow Condensed","Noto Sans SC","PingFang SC",sans-serif;
+  --body:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --hand:"Long Cang","Kaiti SC",cursive;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+body{background:var(--linen);color:var(--ink);font:400 16px/1.75 var(--body);
+  background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.07) 0 1px,transparent 1px 3px),repeating-linear-gradient(90deg,rgba(60,50,80,.05) 0 1px,transparent 1px 3px)}
+.wrap{max-width:1040px;margin:0 auto;padding-block:40px 72px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:56px}
+h1,h2,h3,p{margin:0}
+h1{font:700 clamp(44px,9vw,88px)/.95 var(--display);letter-spacing:.01em}
+h2{font:700 26px/1.3 var(--body);text-wrap:balance}
+h3{font:700 17px/1.4 var(--body)}
+.eyebrow{font:500 12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft)}
+.lede{font-size:18px;max-width:34em}
+p{max-width:38em}
+section{display:flex;flex-direction:column;gap:18px}
+.sheet{background:var(--paper);padding:clamp(18px,3.5vw,32px);box-shadow:0 1px 0 #fff inset,0 10px 30px -18px rgba(40,30,60,.55);display:flex;flex-direction:column;gap:18px}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:22px}
+.cols>*{min-width:0}
+ul{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px;max-width:38em}
+.hero{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:28px;align-items:end}
+@media(max-width:720px){.hero{grid-template-columns:1fr}}
+.pass{background:var(--paper);border-radius:14px;display:grid;grid-template-columns:1fr auto;box-shadow:0 14px 34px -20px rgba(40,30,60,.7);transform:rotate(-2deg)}
+.pass>div{padding:18px 20px}
+.pass .stub{border-left:2px dashed var(--line);display:flex;flex-direction:column;justify-content:space-between;gap:10px;font:500 11px/1.4 var(--mono);color:var(--ink-soft)}
+.pass .route{font:700 clamp(40px,7vw,62px)/1 var(--display);display:flex;gap:.25em;align-items:baseline;flex-wrap:wrap}
+.pass .route i{font-style:normal;color:var(--tape-lav)}
+.pass dl{display:grid;grid-template-columns:repeat(3,auto);gap:4px 18px;margin:14px 0 0;font:500 11px/1.4 var(--mono)}
+.pass dt{color:var(--ink-soft);letter-spacing:.1em}.pass dd{margin:0;font-size:13px;color:var(--ink)}
+.bars{height:34px;background:repeating-linear-gradient(90deg,var(--ink) 0 2px,transparent 2px 5px,var(--ink) 5px 6px,transparent 6px 10px)}
+
+/* 色卡 */
+.chips{display:flex;flex-wrap:wrap;gap:10px}
+.chip{width:92px;background:#fff;box-shadow:0 2px 8px -4px rgba(0,0,0,.4);font:500 10px/1.3 var(--mono)}
+.chip b{display:block;height:54px;background:var(--c)}
+.chip span{display:block;padding:6px 7px}
+
+/* 九站 */
+.stops{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.stop{background:#fff;border-top:10px solid var(--c);padding:12px 14px 14px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.stop .n{font:500 11px/1 var(--mono);color:var(--ink-soft);letter-spacing:.12em}
+.stop .code{font:700 40px/1 var(--display);letter-spacing:.02em}
+.stop .city{font-weight:700}
+.stop small{font-size:13px;line-height:1.55;color:var(--ink-soft)}
+.stop.dark{background:var(--board);color:#fff}.stop.dark small,.stop.dark .n{color:#b9b3c6}
+
+/* 信息牌 */
+.board{background:var(--board);color:var(--board-ink);padding:clamp(14px,3vw,26px);font-family:var(--mono);border-radius:6px;display:flex;flex-direction:column;gap:3px}
+.board .row{display:grid;grid-template-columns:2.4em 5.5em minmax(0,1fr) 7em 1.2em;gap:10px;align-items:center;padding:7px 8px;background:#26232d;font-size:clamp(12px,2.2vw,15px);letter-spacing:.06em}
+.board .head{background:none;color:#8d879b;font-size:11px;letter-spacing:.16em}
+.board .row b{font:700 1.5em/1 var(--display);letter-spacing:.05em;color:#fff}
+.board .row i{width:.9em;height:.9em;border-radius:50%;background:var(--c);display:block}
+.board .row span:nth-child(3){overflow-wrap:anywhere;font-family:var(--body);letter-spacing:0}
+.board .next{color:#8d879b}.board .next b{color:#8d879b}
+@media(max-width:560px){.board .row{grid-template-columns:2em 4.6em minmax(0,1fr) 1em}.board .row span:nth-child(4){display:none}}
+
+/* 跨页示意：所有尺寸用 cqw，随宽度等比缩放 */
+.spread{position:relative;aspect-ratio:212/110;background:var(--pg,#fdfcf9);container-type:inline-size;box-shadow:0 12px 30px -18px rgba(30,20,50,.8);overflow:hidden;width:100%}
+.spread::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:.5cqw;transform:translateX(-50%);background:linear-gradient(90deg,transparent,rgba(60,50,80,.16),transparent)}
+.spread>*{position:absolute}
+.ph{border:.55cqw solid #fff;border-radius:1.3cqw;box-shadow:0 .4cqw 1.2cqw -.4cqw rgba(0,0,0,.45);background:linear-gradient(155deg,color-mix(in srgb,var(--a) 45%,#fff),color-mix(in srgb,var(--a) 82%,#2a2233));display:grid;place-items:center;font:500 1.25cqw/1.2 var(--mono);color:rgba(255,255,255,.92);text-align:center}
+.ph.bw{background:linear-gradient(155deg,#d9d9d9,#4a4a4a)}
+.tape{height:1.7cqw;background:var(--t,var(--tape-lav));opacity:.86}
+.code{font:700 9cqw/.85 var(--display);letter-spacing:.02em;color:var(--ink)}
+.meta{font:500 1.15cqw/1.5 var(--mono);letter-spacing:.1em;color:var(--ink-soft)}
+.hand{font:400 2.5cqw/1.25 var(--hand);color:#2f2b38}
+.tix{background:#efe6d3;border:.15cqw solid #c9b98f;border-radius:.5cqw;font:500 1.05cqw/1.4 var(--mono);color:#6d5f3c;padding:.7cqw;box-shadow:0 0 0 .5cqw rgba(255,255,255,.55),0 0 0 .6cqw rgba(120,120,140,.35)}
+.swatch{display:flex;box-shadow:0 .2cqw .6cqw -.2cqw rgba(0,0,0,.4)}
+.swatch b{flex:1;height:100%}
+.cut{border:.6cqw solid #fff;border-radius:46% 46% 30% 30%/60% 60% 22% 22%;background:linear-gradient(170deg,#f3c9a9,#c9735a);box-shadow:0 .5cqw 1.2cqw -.3cqw rgba(0,0,0,.5);display:grid;place-items:center;font:500 1.05cqw/1.2 var(--mono);color:#fff;text-align:center}
+.qr{background:#fff;border:.2cqw solid var(--ink);background-image:repeating-conic-gradient(var(--ink) 0 25%,#fff 0 50%);background-size:1.1cqw 1.1cqw}
+.dot{width:2.5cqw;height:2.5cqw;min-width:17px;min-height:17px;border-radius:50%;background:var(--ink);color:#fff;font:500 max(1.2cqw,10px)/1 var(--mono);display:grid;place-items:center;z-index:5;box-shadow:0 0 0 2px #fff}
+.vellum{background:rgba(255,255,255,.62);border:.12cqw solid rgba(160,150,140,.5);box-shadow:0 .6cqw 1.6cqw -.6cqw rgba(0,0,0,.35);backdrop-filter:blur(2px);display:grid;place-items:center;text-align:center;padding:2cqw}
+.legend{list-style:none;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:8px 22px;max-width:none}
+.legend li{display:grid;grid-template-columns:22px 1fr;gap:8px;font-size:14.5px;line-height:1.6}
+.legend li>b{width:20px;height:20px;border-radius:50%;background:var(--ink);color:#fff;font:500 11px/20px var(--mono);text-align:center;margin-top:2px}
+.trip3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.trip3 figure{margin:0;display:flex;flex-direction:column;gap:8px;min-width:0}
+.trip3 .pg{position:relative;aspect-ratio:106/110;background:#fdfcf9;container-type:inline-size;box-shadow:0 8px 20px -14px rgba(30,20,50,.8)}
+.trip3 .pg>*{position:absolute}
+.trip3 .pg .code{font-size:22cqw}.trip3 .pg .ph{border-width:1.2cqw;border-radius:2.6cqw;font-size:3.4cqw}.trip3 .pg .meta{font-size:3.2cqw}
+figcaption{font-size:13.5px;color:var(--ink-soft);line-height:1.55}
+table{border-collapse:collapse;width:100%;font-size:14.5px}
+th,td{text-align:left;padding:9px 12px 9px 0;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:500 11px/1.4 var(--mono);letter-spacing:.12em;color:var(--ink-soft)}
+.scroll{overflow-x:auto}
+.q{background:#fff;border-left:0;padding:14px 16px;display:flex;flex-direction:column;gap:4px;box-shadow:inset 0 0 0 1px var(--line)}
+.q b{font-weight:700}
+</style>
+
+<div class="wrap">
+
+<header class="hero">
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <span class="eyebrow">旅行回忆手帐 · 美术方案 v1</span>
+    <h1>九张<br>登机牌</h1>
+    <p class="lede">整本相册只用一个规则：每次旅行是一张登机牌。一个大写的机场代码、一个编号、一种颜色。其余全部留给照片和你自己的字。</p>
+  </div>
+  <div class="pass" aria-hidden="true">
+    <div>
+      <div class="eyebrow">Boarding pass · 08 / 09</div>
+      <div class="route">HOME <i>→</i> LAS</div>
+      <dl><dt>旅客</dt><dt>事由</dt><dt>座位</dt><dd>两位</dd><dd>结婚</dd><dd>靠窗</dd></dl>
+    </div>
+    <div class="stub"><span>NO. 08</span><div class="bars" style="width:86px"></div><span>LAS ×3</span></div>
+  </div>
+</header>
+
+<section>
+  <span class="eyebrow">为什么是这个方向</span>
+  <h2>九次旅行差别很大，需要一个不变的骨架把它们串成一本书</h2>
+  <div class="sheet">
+    <div class="cols">
+      <div><h3>现在好看的手帐长什么样</h3>
+        <p>这两年的方向是从“贴满”转向“编辑感”：大面积留白、一张主图压住版面、无衬线大字做标题、每页只用一种强调色、人物抠图加白边压在照片外面。素材堆叠的复古拼贴仍然有，但更多用在局部。</p></div>
+      <div><h3>你这本的条件</h3>
+        <p>灰紫色亚麻封面和紫粉色胶带已经定了底色，所以底色走冷调的灰紫和纸白，不走牛皮纸复古。九次旅行里拉斯维加斯出现三次、最后一次是婚礼，这是别人的相册没有的结构，值得做成整本书的主线。</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">不变的部分</span>
+  <h2>全书通用的五条规则</h2>
+  <div class="sheet">
+    <div class="chips" aria-label="底色">
+      <div class="chip" style="--c:#fdfcf9"><b></b><span>纸白<br>内页</span></div>
+      <div class="chip" style="--c:#25222b"><b></b><span>墨黑<br>G2 手写</span></div>
+      <div class="chip" style="--c:#a9a4b8"><b></b><span>亚麻灰紫<br>封面</span></div>
+      <div class="chip" style="--c:#b9a8d6"><b></b><span>淡紫<br>已有胶带</span></div>
+      <div class="chip" style="--c:#e7b4c8"><b></b><span>粉<br>已有胶带</span></div>
+    </div>
+    <ul>
+      <li><b>代码最大。</b>每个跨页左上角一张打印的小标签：编号、三个字母的机场代码、日期。这是全书唯一的印刷字。</li>
+      <li><b>一页一色。</b>每次旅行只有一种强调色，只出现在三处：标签上的色条、一条胶带或色卡、一处手绘线。面积控制在版面的一成以内。</li>
+      <li><b>一张主图。</b>每个跨页一张 4x6 当主图，其余印小一号。照片全部圆角，标签和票据保持直角，两种边缘形成对比。</li>
+      <li><b>留白三分之一。</b>每页至少留三分之一不贴东西，字写在留白里。贴满的版面一次好看，九次连着看会累。</li>
+      <li><b>字只写一句。</b>每张照片最多一行手写，整页一段不超过三行的话。写在纸条上再贴，不直接写在页面上，写坏了可以换。</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">变化的部分</span>
+  <h2>九站，各一种颜色和一个只属于它的物件</h2>
+  <div class="stops">
+    <div class="stop" style="--c:#ff3d8b"><span class="n">01</span><span class="code">LAS</span><span class="city">拉斯维加斯</span><small>霓虹粉。筹码、房卡。全书第一页，版式要记住，后面还会重复两次。</small></div>
+    <div class="stop dark" style="--c:#19d3e6"><span class="n">02</span><span class="code">MIA</span><span class="city">迈阿密 Ultra</span><small>电光青。全书唯一的深色跨页，手环居中，一条声波贯穿两页。</small></div>
+    <div class="stop" style="--c:#f2684e"><span class="n">03</span><span class="code">HNL</span><span class="city">夏威夷</span><small>珊瑚红。压干的花或叶子装进透明口袋，海岸线手绘。</small></div>
+    <div class="stop" style="--c:#f5b800"><span class="n">04</span><span class="code">NYC</span><span class="city">纽约</span><small>出租车黄。地铁卡、演出票根。竖构图照片多，版式竖着排。</small></div>
+    <div class="stop" style="--c:#3f8fd0"><span class="n">05</span><span class="code">ORD</span><span class="city">芝加哥</span><small>湖蓝。建筑线条，照片严格对齐网格，全书最规整的一页。</small></div>
+    <div class="stop" style="--c:#f08a24"><span class="n">06</span><span class="code">CA-1</span><span class="city">洛杉矶 → 旧金山</span><small>落日橙。没有机场代码，用公路编号。一条路线横穿两页。</small></div>
+    <div class="stop" style="--c:#b5482e"><span class="n">07</span><span class="code">GCN</span><span class="city">大峡谷 + 拉斯维加斯</span><small>赤陶红。撕出毛边的色纸叠三四层当岩层，照片压在上面。</small></div>
+    <div class="stop" style="--c:#b9975b"><span class="n">08</span><span class="code">LAS</span><span class="city">拉斯维加斯 · 婚礼</span><small>金。黑白照片加一点金，全书唯一不用彩色的两个跨页。</small></div>
+    <div class="stop" style="--c:#24365e"><span class="n">09</span><span class="code">NYC⇄DC</span><span class="city">纽约 · 华盛顿 · 纽约</span><small>藏青。往返的折线，火车票并排贴，去程回程各占一页。</small></div>
+  </div>
+  <p style="font-size:14px;color:var(--ink-soft)">代码是我按城市猜的。实际从哪个机场进出，以票据为准再改，比如夏威夷可能是 OGG 或 KOA，纽约可能是 JFK、LGA 或 EWR。</p>
+</section>
+
+<section>
+  <span class="eyebrow">设计一 · 扉页</span>
+  <h2>翻开第一页是一块机场出发信息牌</h2>
+  <p>整页深色，九行，像候机厅的翻牌屏。它同时是目录。最后留一行空着的第十次，不填。</p>
+  <div class="board">
+    <div class="row head"><span>NO</span><span>代码</span><span>目的地</span><span>日期</span><span></span></div>
+    <div class="row" style="--c:#ff3d8b"><span>01</span><b>LAS</b><span>拉斯维加斯</span><span>待填</span><i></i></div>
+    <div class="row" style="--c:#19d3e6"><span>02</span><b>MIA</b><span>迈阿密 Ultra</span><span>待填</span><i></i></div>
+    <div class="row" style="--c:#f2684e"><span>03</span><b>HNL</b><span>夏威夷</span><span>待填</span><i></i></div>
+    <div class="row" style="--c:#f5b800"><span>04</span><b>NYC</b><span>纽约</span><span>待填</span><i></i></div>
+    <div class="row" style="--c:#3f8fd0"><span>05</span><b>ORD</b><span>芝加哥</span><span>待填</span><i></i></div>
+    <div class="row" style="--c:#f08a24"><span>06</span><b>CA-1</b><span>洛杉矶 → 旧金山</span><span>待填</span><i></i></div>
+    <div class="row" style="--c:#b5482e"><span>07</span><b>GCN</b><span>大峡谷 + 拉斯维加斯</span><span>待填</span><i></i></div>
+    <div class="row" style="--c:#b9975b"><span>08</span><b>LAS</b><span>拉斯维加斯 · 婚礼</span><span>待填</span><i></i></div>
+    <div class="row" style="--c:#24365e"><span>09</span><b>NYC</b><span>纽约 · 华盛顿 · 纽约</span><span>待填</span><i></i></div>
+    <div class="row next" style="--c:#4a4654"><span>10</span><b>— — —</b><span>还没去</span><span></span><i></i></div>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">设计二 · 标准跨页</span>
+  <h2>一个普通跨页的样子，以夏威夷为例</h2>
+  <div class="spread" style="--a:#f2684e">
+    <div class="code" style="left:4%;top:7%">HNL</div>
+    <div class="meta" style="left:4.3%;top:25%">NO. 03 · 夏威夷 · 日期待填</div>
+    <div style="left:4.3%;top:30.5%;width:9%;height:1.3%;background:#f2684e"></div>
+    <div class="ph" style="left:4%;top:38%;width:30%;height:39%;transform:rotate(-1.2deg)">主图 4x6</div>
+    <div class="tape" style="left:14%;top:36%;width:9%;transform:rotate(-3deg)"></div>
+    <div class="cut" style="left:30%;top:42%;width:11%;height:36%">抠图<br>贴纸</div>
+    <div class="hand" style="left:5%;top:82%">第一次看到这么蓝的海。</div>
+    <div class="swatch" style="left:27%;top:9%;width:17%;height:6%"><b style="background:#0f6f8f"></b><b style="background:#39b7a5"></b><b style="background:#f4e3c1"></b><b style="background:#f2684e"></b><b style="background:#2c3a2f"></b></div>
+    <div class="ph" style="--a:#39b7a5;left:55%;top:8%;width:17%;height:44%;transform:rotate(1.5deg)">3x4</div>
+    <div class="ph" style="--a:#0f6f8f;left:75%;top:13%;width:20%;height:29%;transform:rotate(-1deg)">3x4</div>
+    <div class="tix" style="left:56%;top:60%;width:22%;height:22%;transform:rotate(-2deg)">登机牌<br>装在透明口袋里</div>
+    <div class="hand" style="left:76%;top:47%;font-size:2.1cqw">那天的日落</div>
+    <div class="qr" style="left:86%;top:68%;width:8%;height:15.4%"></div>
+    <div class="meta" style="left:84.6%;top:85%">扫码，照片会动</div>
+    <div class="dot" style="left:1.2%;top:4%">1</div>
+    <div class="dot" style="left:44.6%;top:6%">2</div>
+    <div class="dot" style="left:1.5%;top:56%">3</div>
+    <div class="dot" style="left:42%;top:42%">4</div>
+    <div class="dot" style="left:53%;top:68%">5</div>
+    <div class="dot" style="left:70%;top:58%">6</div>
+  </div>
+  <ol class="legend">
+    <li><b>1</b><span><strong>代码标签。</strong>打印后剪下来贴。全书位置固定在左上角，翻页时眼睛知道去哪找。</span></li>
+    <li><b>2</b><span><strong>色卡来自照片本身。</strong>从这次旅行的照片里提取五个颜色印成一条。强调色就从里面选，保证和照片不打架。</span></li>
+    <li><b>3</b><span><strong>主图。</strong>唯一印 4x6 的一张，略微倾斜，顶上一条胶带。</span></li>
+    <li><b>4</b><span><strong>抠图压边。</strong>把一张照片里的人抠出来加白边，压在主图边缘外。这是版面里唯一打破矩形的东西。</span></li>
+    <li><b>5</b><span><strong>票据进口袋。</strong>热敏纸不碰胶面。口袋本身的反光也是一种质感。</span></li>
+    <li><b>6</b><span><strong>右页留白。</strong>小照片不贴满，手写放在空的地方。</span></li>
+  </ol>
+</section>
+
+<section>
+  <span class="eyebrow">设计三 · 主线</span>
+  <h2>三次拉斯维加斯用同一个版式</h2>
+  <p>第 1、7、8 次都到了拉斯维加斯。这三页的主图放在完全相同的位置、相同的大小，最好是同一个地点或同一个姿势。翻到第三次时会认出前两次，而第三次是婚礼。标签上印 ×1、×2、×3。</p>
+  <div class="trip3">
+    <figure><div class="pg"><div class="code" style="left:7%;top:6%">LAS</div><div class="meta" style="left:8%;top:27%">NO. 01 · ×1</div><div class="ph" style="--a:#ff3d8b;left:14%;top:38%;width:72%;height:48%">同一位置</div></div><figcaption>第一次。霓虹粉。</figcaption></figure>
+    <figure><div class="pg"><div class="code" style="left:7%;top:6%">LAS</div><div class="meta" style="left:8%;top:27%">NO. 07 · ×2</div><div class="ph" style="--a:#b5482e;left:14%;top:38%;width:72%;height:48%">同一位置</div></div><figcaption>从大峡谷回来。赤陶红。</figcaption></figure>
+    <figure><div class="pg"><div class="code" style="left:7%;top:6%;color:#b9975b">LAS</div><div class="meta" style="left:8%;top:27%">NO. 08 · ×3</div><div class="ph bw" style="left:14%;top:38%;width:72%;height:48%">同一位置<br>黑白</div></div><figcaption>婚礼。黑白，代码改成金色。</figcaption></figure>
+  </div>
+  <p style="font-size:14px;color:var(--ink-soft)">前提是三次里能找到构图接近的照片。找不到同一地点，就用同一种取景，比如都是两个人的合照。</p>
+</section>
+
+<section>
+  <span class="eyebrow">设计四 · 婚礼</span>
+  <h2>婚礼是全书唯一打破规则的地方</h2>
+  <p>前面七站都有颜色，到这里颜色全部拿掉：照片印黑白，只留一点金。左页一张照片放到最大，右页几乎全空，盖一张硫酸纸，掀开才看到下面的照片和誓词。</p>
+  <div class="spread">
+    <div class="ph bw" style="left:3%;top:6%;width:44%;height:88%;border-radius:.6cqw">主图<br>整页大小</div>
+    <div class="code" style="left:56%;top:9%;color:#b9975b;font-size:7cqw">LAS</div>
+    <div class="meta" style="left:56.3%;top:23.5%">NO. 08 · ×3 · 日期待填</div>
+    <div style="left:56.3%;top:29%;width:36%;height:.35%;background:#b9975b"></div>
+    <div class="ph bw" style="left:60%;top:38%;width:22%;height:42%">第二张</div>
+    <div class="vellum" style="left:56%;top:34%;width:36%;height:54%;transform:rotate(1.2deg)"><span class="hand">誓词或那天说的一句话<br>手写在硫酸纸上</span></div>
+    <div class="tape" style="--t:#d9c08a;left:68%;top:32%;width:11%;transform:rotate(1.2deg)"></div>
+  </div>
+  <p>自粘页有一层透明膜会盖住所有东西，所以硫酸纸要贴在膜的外面，用一条胶带在顶边做合页。这次建议做两个跨页，第二个跨页放结婚证复印件、教堂收据这类纸质纪念品。</p>
+</section>
+
+<section>
+  <span class="eyebrow">设计五 · 公路旅行</span>
+  <h2>一条真实路线横穿两页，照片挂在拍摄的位置上</h2>
+  <p>照片里有 GPS。我可以把这次旅行每张照片的位置连成线，生成一张只有线条的路线图打印出来当底，照片沿着线贴在实际拍摄的那一段。下面的站点是示例，实际以你照片的定位为准。</p>
+  <div class="spread" style="--a:#f08a24">
+    <svg viewBox="0 0 212 110" style="inset:0;width:100%;height:100%" aria-hidden="true">
+      <path d="M12 96 C30 92 34 78 52 76 S78 70 92 58 S118 48 132 40 S160 30 172 22 S190 14 200 10" fill="none" stroke="#f08a24" stroke-width="0.9" stroke-dasharray="2.4 1.8" stroke-linecap="round"/>
+      <g fill="#25222b"><circle cx="12" cy="96" r="1.5"/><circle cx="52" cy="76" r="1.2"/><circle cx="92" cy="58" r="1.2"/><circle cx="132" cy="40" r="1.2"/><circle cx="200" cy="10" r="1.5"/></g>
+      <g font-family="IBM Plex Mono,monospace" font-size="2.6" fill="#5f5a6b"><text x="15" y="101">洛杉矶</text><text x="46" y="84">圣巴巴拉</text><text x="95" y="64">大苏尔</text><text x="135" y="46">蒙特雷</text><text x="184" y="18">旧金山</text></g>
+    </svg>
+    <div class="code" style="left:4%;top:7%;font-size:7.5cqw">CA-1</div>
+    <div class="meta" style="left:4.3%;top:22%">NO. 06 · 洛杉矶 → 旧金山</div>
+    <div class="ph" style="left:5%;top:36%;width:19%;height:36%;transform:rotate(-2deg)">3x4</div>
+    <div class="ph" style="--a:#e0a15a;left:27%;top:26%;width:17%;height:30%;transform:rotate(1.5deg)">2x3</div>
+    <div class="ph" style="--a:#5f8fa8;left:53%;top:56%;width:26%;height:36%;transform:rotate(-1deg)">主图 4x6</div>
+    <div class="ph" style="--a:#d77a3a;left:68%;top:8%;width:15%;height:26%;transform:rotate(2deg)">2x3</div>
+    <div class="hand" style="left:82%;top:48%;font-size:2.2cqw">开了多少英里<br>写在这里</div>
+  </div>
+  <p>同样的做法也能用在别的页：第 9 次是一条去了又回的折线，夏威夷是一圈环岛线。每页一小块，成为全书第二个重复出现的元素。</p>
+</section>
+
+<section>
+  <span class="eyebrow">设计六 · 会动的照片</span>
+  <h2>手机对准相册，照片在原位置动起来</h2>
+  <p>不需要给每张照片配定位码，也不需要记住排版。照片本身就是识别目标：手机认出这张照片的画面，把视频贴在它的四个角上，相册怎么拿、照片贴在哪都跟得住。每个跨页只留一个小二维码，用来打开这一页的识别网页。</p>
+  <div class="cols">
+    <div class="sheet"><h3>1. 扫一次码</h3><p>跨页角落的小二维码打开一个网页，不用装 App。网页只加载这一次旅行的照片和视频。</p></div>
+    <div class="sheet"><h3>2. 对准照片</h3><p>摄像头认出某张照片，视频从同一个画面开始播放，盖在照片上。移开就停。</p></div>
+    <div class="sheet"><h3>3. 实况照片最合适</h3><p>iPhone 的实况照片自带约三秒视频，画面和照片一致。印出来的那一帧接着动起来，效果最像会动的画像。</p></div>
+  </div>
+  <ul>
+    <li><b>哪些照片做：</b>每个跨页挑一到三张，不是每张都动。有实况或有同场景视频的优先。</li>
+    <li><b>哪些照片认不准：</b>大片天空、海面、纯色背景的照片特征太少。透明膜反光也会影响，要避开顶灯直射。</li>
+    <li><b>要一直能用：</b>网页和视频要放在一个长期在线的地址上。放哪里、别人拿到链接能不能看，需要你决定。</li>
+  </ul>
+</section>
+
+<section>
+  <span class="eyebrow">其余几个点子</span>
+  <h2>按效果和工作量排的清单</h2>
+  <div class="sheet scroll">
+    <table>
+      <thead><tr><th>设计</th><th>做法</th><th>谁来做</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Ultra 深色跨页</strong></td><td>先铺一张黑卡纸当底，照片不留白边。把现场视频的音轨画成一条声波，印成细长条横穿两页，旁边放二维码，扫了能听到那一段。</td><td>我出声波和二维码，你贴</td></tr>
+        <tr><td><strong>大峡谷岩层</strong></td><td>三四种红褐色的纸手撕出毛边，一层压一层贴在页面下半部，照片压在上面。撕纸的边缘就是峡谷的轮廓。</td><td>你手撕，不需要打印</td></tr>
+        <tr><td><strong>页边索引</strong></td><td>每个跨页右边缘贴一小段该页强调色的胶带，位置逐页下移。合上相册从侧面能看到九段颜色排成一列。</td><td>你贴，要补几卷纯色胶带</td></tr>
+        <tr><td><strong>封面小窗</strong></td><td>封面的窗口不放人像，放一张迷你登机牌：两个人的名字、起点、“目的地：待定”。</td><td>我出图，你打印</td></tr>
+        <tr><td><strong>尾页数据</strong></td><td>最后一页用票据清单统计：九次、多少个航段、多少英里、多少张照片、三次拉斯维加斯。只有数字，大字。</td><td>票据清单出来后我算</td></tr>
+        <tr><td><strong>给对方的一句话</strong></td><td>每次旅行用 2x3 自封袋装一张折起来的小纸条，各写一句当时没说的话。看的人要自己拿出来读。</td><td>你们手写</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">落地</span>
+  <h2>我能直接生成的，和需要补买的</h2>
+  <div class="cols">
+    <div class="sheet"><h3>可打印素材包</h3>
+      <ul><li>九张代码标签，按统一模板</li><li>扉页信息牌，按相册页面尺寸</li><li>每次旅行的五色色卡，从照片提取</li><li>每次旅行的路线线稿，从照片 GPS 生成</li><li>声波条、二维码、封面小窗的登机牌</li></ul>
+      <p style="font-size:14px;color:var(--ink-soft)">都排在 4x6 版面上，和照片一起冲印，回来剪开。</p></div>
+    <div class="sheet"><h3>建议补买</h3>
+      <ul><li>硫酸纸几张，婚礼页用</li><li>金色细胶带或金色笔一支</li><li>黑卡纸两张，Ultra 页用</li><li>纯色细胶带若干，对应九种强调色里手头没有的</li><li>红褐色系色纸，大峡谷页用</li></ul></div>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">需要你定的</span>
+  <h2>四个会改变方案的问题</h2>
+  <div class="cols">
+    <div class="q"><b>内页是白色还是黑色？</b><span>这版按白色内页设计。如果是黑色，底色和手写方式都要换，要用附送的那支金属笔。</span></div>
+    <div class="q"><b>标签用印刷字可以吗？</b><span>之前定的是正文手写。代码标签我建议打印，因为要九张完全一致才有效果。想全手写也行，我改成描字用的模板。</span></div>
+    <div class="q"><b>这个主线对不对？</b><span>我把“三次拉斯维加斯到婚礼”当成全书的线。如果你心里这本书的重点是别的，比如两个人一起去过的地方，方向要调。</span></div>
+    <div class="q"><b>哪几次想做两个跨页？</b><span>我建议婚礼做两个，公路旅行和第 9 次视照片数量再定。</span></div>
+  </div>
+</section>
+
+</div>
+
+</body>
+</html>

@@ -1,6 +1,13 @@
-# 旅行回忆手帐工具
+# 旅行回忆手帐
 
-配合 [HANDOFF.md](HANDOFF.md) 里的制作流程用的几个本地脚本。和仓库里的 Minecraft 机器人无关，只是放在这里。
+把九次旅行的照片、票据和纪念品做成一本手帐风格的相册。这个仓库放制作用的脚本和方案文档。
+
+- [docs/HANDOFF.md](docs/HANDOFF.md)：项目背景、已定的决定、旅行清单、制作流程
+- [docs/design.html](docs/design.html)：美术方案“九张登机牌”，用浏览器打开
+
+照片、视频和票据扫描件不进仓库（见 `.gitignore`），只放在本机的 `media/` 和 `output/` 里。
+
+## 脚本
 
 所有脚本都只读原始照片，结果写到新的输出文件夹，不会改动或删除原文件。
 
@@ -17,10 +24,10 @@ pip install -r requirements.txt
 这一步不是脚本：把票据照片放进一个文件夹，在 Claude Code 里让它逐张看图，按 [tickets.example.csv](tickets.example.csv) 的列填出 `tickets.csv`。
 认不清的字段留空并在"备注"里写明，不要猜。日期统一写成 `2024-04-10`。
 
-## 2. 照片按旅行分组（`group_photos.py`）
+## 2. 照片按旅行分组（`scripts/group_photos.py`）
 
 ```
-python group_photos.py 手机导出的照片 分组结果 --tickets tickets.csv
+python scripts/group_photos.py 手机导出的照片 分组结果 --tickets tickets.csv
 ```
 
 - 每次旅行一个文件夹，名字是日期范围加票据上的目的地。
@@ -43,19 +50,19 @@ python group_photos.py 手机导出的照片 分组结果 --tickets tickets.csv
 没有 GPS 的照片库（比如关了定位）只能按时间间隔分段，日常照片也会成段，报告里会提示。
 视频文件不处理。
 
-## 5. 二维码（`make_qr.py`）
+## 5. 二维码（`scripts/make_qr.py`）
 
 ```
-python make_qr.py links.csv 二维码
+python scripts/make_qr.py links.csv 二维码
 ```
 
 `links.csv` 三列：`旅行,标题,链接`。输出每个二维码的单张 PNG，以及拼在 4x6 相纸上的拼版（默认每张 6 个，1.5 寸见方），和照片一起冲印后剪开。
 链接要用长期有效的，否则几年后扫不出来。
 
-## 6. 排版示意（`layout_sketch.py`）
+## 6. 排版示意（`scripts/layout_sketch.py`）
 
 ```
-python layout_sketch.py 分组结果/2024-04-10_04-13_成都 排版 --page 10.6x11 --tickets 3
+python scripts/layout_sketch.py 分组结果/2024-04-10_04-13_成都 排版 --page 10.6x11 --tickets 3
 ```
 
 `--page` 是相册单页可贴区域的宽x高（英寸），相册到手后量一下再填。
@@ -67,5 +74,6 @@ python layout_sketch.py 分组结果/2024-04-10_04-13_成都 排版 --page 10.6x
 
 ## 没做的部分
 
+- 会动的照片（网页 AR）：方案见 docs/design.html 的“设计六”，还没写代码，要先用一张实况照片试验。
 - 回忆提问（任务 3）：要等票据时间线和照片分组出来后，对着 `report.md` 在对话里做。
 - ComfyUI 放大、抠图、统一色调（任务 4）：依赖本机装了哪些模型和节点，需要在那台机器上配。
