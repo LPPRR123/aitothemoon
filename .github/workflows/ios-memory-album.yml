@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "ios/MemoryAlbumAR/**"
+      - "!ios/MemoryAlbumAR/**.md"
       - ".github/workflows/ios-memory-album.yml"
   workflow_dispatch:
 

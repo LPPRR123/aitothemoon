@@ -54,4 +54,6 @@ AR 功能必须在真机上用，Xcode 的模拟器没有相机，只能看界�
 
 用的是苹果自带的 ARKit 图像追踪（`ARImageTrackingConfiguration`），没有任何第三方依赖。
 
-`.github/workflows/ios-memory-album.yml` 会在这个目录有改动时，用 GitHub 的 macOS 机器编译一遍，确认代码能编过。
+`.github/workflows/ios-memory-album.yml` 会在这个目录有改动时（Markdown 文件除外），用 GitHub 的 macOS 机器编译一遍，确认代码能编过。
+
+接手这个项目请先看 [HANDOFF.md](HANDOFF.md)。
